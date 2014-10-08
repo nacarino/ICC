@@ -151,7 +151,9 @@ PeriodicPitPrinter (Ptr<Node> node)
 {
 	Ptr<ndn::Pit> pit = node->GetObject<ndn::Pit> ();
 
-	cout << "Node: " << node->GetId () << endl;
+	cout << "================ Node: " << node->GetId () << " PIT ================" << endl;
+
+	cout << "================ Size: " << pit->GetSize() << " ====================" << endl;
 
 	for (Ptr<ndn::pit::Entry> entry = pit->Begin (); entry != pit->End (); entry = pit->Next (entry))
 	{
@@ -184,6 +186,8 @@ PeriodicPitPrinter (Ptr<Node> node)
 
 		cout << entry->GetPrefix () << "\t" << entry->GetExpireTime () << endl;
 	}
+
+	cout << "=============================================" << endl;
 }
 
 int main (int argc, char *argv[])
@@ -202,10 +206,11 @@ int main (int argc, char *argv[])
 	bool smart = false;                           // Tells to run the simulation with SmartFlooding
 	bool bestr = false;                           // Tells to run the simulation with BestRoute
 	bool walk = true;                             // Do random walk at walking speed
+	bool wifig = false;
 	double speed= 5;							  // MN's speed	change here (1.4 | 8.3 | 16.7)
 	char results[250] = "results";                // Directory to place results
 	double endTime = 200;                         // Number of seconds to run the simulation
-	double MBps = 0.15;                           // MB/s data rate desired for applications
+	double MBps = 0.151552;                       // MB/s data rate desired for applications
 	int contentSize = -1;                         // Size of content to be retrieved
 	int maxSeq = -1;                              // Maximum number of Data packets to request
 	double retxtime = 0.05;                       // How frequent Interest retransmission timeouts should be checked (seconds)
@@ -233,6 +238,7 @@ int main (int argc, char *argv[])
 	cmd.AddValue ("mbps", "Data transmission rate for NDN App in MBps", MBps);
 	cmd.AddValue ("size", "Content size in MB (-1 is for no limit)", contentSize);
 	cmd.AddValue ("retx", "How frequent Interest retransmission timeouts should be checked in seconds", retxtime);
+	cmd.AddValue ("wifig", "Use Wifi G Standard", wifig);
 	cmd.AddValue ("traceFile", "Directory containing Ns2 movement trace files (Usually created by Bonnmotion)", nsTDir);
 	//cmd.AddValue ("deltaTime", "time interval (s) between updates (default 100)", deltaTime);	
 	cmd.Parse (argc,argv);
@@ -285,7 +291,7 @@ int main (int argc, char *argv[])
 		break;
 	}
 	nsTFile = buffer;
-	endTime = 400 / realspeed;
+	endTime = round(400 / realspeed);
 	cout << "endtime=" << endTime << endl;
 
 
@@ -484,7 +490,10 @@ int main (int argc, char *argv[])
 
 	// Use the Wifi Helper to define the wireless interfaces for APs
 	WifiHelper wifi;
-	wifi.SetStandard(WIFI_PHY_STANDARD_80211g);
+	if (wifig)
+	{
+		wifi.SetStandard(WIFI_PHY_STANDARD_80211g);
+	}
 	// The N standard is apparently not completely supported in NS-3
 	//wifi.setStandard(WIFI_PHY_STANDARD_80211n_2_4GHZ);
 	// The ConstantRateWifiManager only works with one rate, making issues
@@ -542,7 +551,7 @@ int main (int argc, char *argv[])
 		wifiMacHelper.SetType ("ns3::ApWifiMac",
 						   "Ssid", SsidValue (ssidV[i]),
 						   "BeaconGeneration", BooleanValue (true),
-						   "BeaconInterval", TimeValue (Seconds (0.102)));
+						   "BeaconInterval", TimeValue (Seconds (0.1)));
 
 		wifiAPNetDevices.push_back (wifi.Install (wifiPhyHelper, wifiMacHelper, wirelessContainer.Get (i)));
 	}
@@ -724,8 +733,14 @@ int main (int argc, char *argv[])
 			Simulator::Schedule (Seconds(j), &SetSSID, mobileNodeIds[0], 0, ssidV[k]);
 		}
 
+		/*
 		NS_LOG_INFO ("------Testing PIT printing------");
-		Simulator::Schedule (Seconds(j), &PeriodicPitPrinter, wirelessContainer.Get(0));
+		for (int i = 0; i < 6; i++)
+		{
+			sprintf(buffer, "Running event at %f", j+i);
+			cout << buffer << endl;
+			Simulator::Schedule (Seconds(j+i), &PeriodicPitPrinter, mobileTerminalContainer.Get(0));
+		}*/
 
 		j += checkTime;
 		k++;
