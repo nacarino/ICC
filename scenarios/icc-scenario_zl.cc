@@ -193,6 +193,15 @@ PeriodicPitPrinter (Ptr<Node> node)
 			    cout << nameprefix[i] << endl;
 			  }
 //		cout << entry->GetPrefix () << "\t" << entry->GetExpireTime () << endl; // Get name prefix of PIT entry
+			
+			vector<Ptr<const Interest> > previousinterests;
+			for (Ptr<ndn::pit::Entry> entry = pit->Begin (); entry != pit->End (); entry = pit->Next (entry))
+				{
+					previousinterests.push_back (entry->GetInterest());
+				}
+				for (int i=0; i<previousinterests.size();i++){
+				    cout << previousinterests[i] << endl;
+				  }
 	}
 }
   
