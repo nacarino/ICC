@@ -769,7 +769,7 @@ int main (int argc, char *argv[])
 	// Get the Consumer application
 	Ptr<ndn::PriConsumer> consumer;
 	if (( consumer =
-			DynamicCast<ndn::PriConsumer> (mobileTerminalContainer.Get (0)->GetApplication(1))) != 0)
+			DynamicCast<ndn::PriConsumer> (mobileTerminalContainer.Get (0)->GetApplication(0))) != 0)
 		exit(1);
 
 	NS_LOG_INFO ("------Scheduling events - SSID changes------");
