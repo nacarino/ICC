@@ -75,6 +75,10 @@ namespace br = boost::random;
 #include <ns3-dev/ns3/ndnSIM/model/pit/ndn-pit-entry-incoming-face.h>
 #include <ns3-dev/ns3/ndnSIM/model/pit/ndn-pit-entry-outgoing-face.h>
 
+#include <ns3-dev/ns3/ndnSIM/apps/ndn-consumer.h>
+
+#include "ndn-priconsumer.h"
+
 
 typedef struct timeval TIMER_TYPE;
 #define TIMER_NOW(_t) gettimeofday (&_t,NULL);
@@ -203,6 +207,22 @@ PeriodicPitPrinter (Ptr<Node> node)
 			cout << previousinterests[i] << endl;
 		}
 	}
+}
+
+void PrintSeqs (Ptr<ndn::PriConsumer> consumer)
+{
+	cout << "Printing sequence numbers to distribute" << endl;
+
+	std::set<uint32_t> seqset = consumer->GetSeqTimeout ();
+	cout << "Survived the class grab" << endl;
+	std::set<uint32_t>::iterator it;
+
+	std::cout << "myset contains:";
+	for (it=seqset.begin(); it!=seqset.end(); ++it)
+		std::cout << ' ' << *it;
+	std::cout << '\n';
+
+	cout << "______________________________" << endl;
 }
   
 /*  void
@@ -666,7 +686,7 @@ int main (int argc, char *argv[])
 	NS_LOG_INFO (buffer);
 
 	// Create the consumer on the randomly selected node
-	ndn::AppHelper consumerHelper ("ns3::ndn::ConsumerCbr");
+	ndn::AppHelper consumerHelper ("ns3::ndn::PriConsumer");
 	consumerHelper.SetPrefix ("/waseda/sato");
 	consumerHelper.SetAttribute ("Frequency", DoubleValue (intFreq));
 	consumerHelper.SetAttribute ("StartTime", TimeValue (Seconds(1)));
@@ -746,12 +766,22 @@ int main (int argc, char *argv[])
 //		ndn::CsTracer::InstallAll (filename, Seconds (1));
 	}
 
+	// Get the Consumer application
+	Ptr<ndn::PriConsumer> consumer;
+	if (( consumer =
+			DynamicCast<ndn::PriConsumer> (mobileTerminalContainer.Get (0)->GetApplication(1))) != 0)
+		exit(1);
+
 	NS_LOG_INFO ("------Scheduling events - SSID changes------");
 
 	// Schedule AP Changes
 	double apsec = 0.0;
 	// How often should the AP check it's distance
 	double checkTime = 100.0/realspeed;
+	// How often should we check the timeouts (milliseconds)
+	double totalCheckTime = 1000;
+	double timeTime = 20;
+	double tmpT = 0;
 	double j = apsec;
 	int k = 0;
 
@@ -765,11 +795,20 @@ int main (int argc, char *argv[])
 			Simulator::Schedule (Seconds(j), &SetSSID, mobileNodeIds[0], 0, ssidV[k]);
 		}
 
+		while (tmpT <= totalCheckTime && k != 0)
+		{
+			Time tosche = Seconds(j) + MilliSeconds(tmpT);
+			cout << "Running packet sequence event at " << tosche << endl;
+			Simulator::Schedule (tosche, &PrintSeqs, consumer);
+			tmpT += timeTime;
+		}
+
 		NS_LOG_INFO ("------Testing PIT printing------");
 		Simulator::Schedule (Seconds(j), &PeriodicPitPrinter, wirelessContainer.Get(0));
 //	    Simulator::Schedule (Seconds(j), &PITEntryCreator, wirelessContainer.Get(k), wirelessContainer.Get(k+1));
 		j += checkTime;
 		k++;
+		tmpT = 0;
 	}
 
 
