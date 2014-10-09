@@ -565,7 +565,7 @@ int main (int argc, char *argv[])
 	YansWifiPhyHelper wifiPhyHelper = YansWifiPhyHelper::Default ();
 	wifiPhyHelper.SetChannel (wifiChannel.Create ());
 	wifiPhyHelper.Set("TxPowerStart", DoubleValue(16.0206));
-	wifiPhyHelper.Set("TxPowerEnd", DoubleValue(1));
+	wifiPhyHelper.Set("TxPowerEnd", DoubleValue(16.0206));
 
 	// Add a simple no QoS based card to the Wifi interfaces
 	NqosWifiMacHelper wifiMacHelper = NqosWifiMacHelper::Default ();
