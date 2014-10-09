@@ -151,10 +151,27 @@ void
 PeriodicPitPrinter (Ptr<Node> node)
 {
 	Ptr<ndn::Pit> pit = node->GetObject<ndn::Pit> ();
+	Ptr<ndn::ContentStore> cs = node->GetObject<ndn::ContentStore> ();
 
 	cout << "Node: " << node->GetId () << endl; // test which node to get PIT Information
 
-	for (Ptr<ndn::pit::Entry> entry = pit->Begin (); entry != pit->End (); entry = pit->Next (entry))
+	vector<Ptr< const Data > > proactivedata;
+	vector<Name> nameprefix;
+	
+	for (Ptr<ndn::cs::Entry> entry = cs->Begin (); entry != cs->End (); entry = cs->Next (entry))
+	{
+		nameprefix.push_back (entry->GetName());
+		proactivedata.push_back (entry->GetData());
+	}
+	for (int i=0; i<nameprefix.size();i++)
+	{
+	    cout << nameprefix[i] << endl;
+	}
+	for (int i=0; i<proactivedata.size();i++)
+	{
+	    cout << proactivedata[i] << endl;
+	}
+/*	for (Ptr<ndn::pit::Entry> entry = pit->Begin (); entry != pit->End (); entry = pit->Next (entry))
 	{
 		ndn::pit::Entry::in_container incoming = entry->GetIncoming (); //IncomingFace
 		ndn::pit::Entry::out_container outgoing = entry->GetOutgoing (); //OutcomingFace
@@ -183,6 +200,9 @@ PeriodicPitPrinter (Ptr<Node> node)
 			cout << *face.m_face;
 		}
 		
+
+		
+/*		// A vector to store PIT Entry's nameprefix
 		vector<Name> nameprefix;
 		
 		for (Ptr<ndn::pit::Entry> entry = pit->Begin (); entry != pit->End (); entry = pit->Next (entry))
@@ -192,9 +212,13 @@ PeriodicPitPrinter (Ptr<Node> node)
 			for (int i=0; i<nameprefix.size();i++){
 			    cout << nameprefix[i] << endl;
 			  }
+*/
+		
 //		cout << entry->GetPrefix () << "\t" << entry->GetExpireTime () << endl; // Get name prefix of PIT entry
 			
+/*			// A vector to store Interest recorded in PIT
 			vector<Ptr<const Interest> > previousinterests;
+			
 			for (Ptr<ndn::pit::Entry> entry = pit->Begin (); entry != pit->End (); entry = pit->Next (entry))
 				{
 					previousinterests.push_back (entry->GetInterest());
@@ -203,6 +227,9 @@ PeriodicPitPrinter (Ptr<Node> node)
 				    cout << previousinterests[i] << endl;
 				  }
 	}
+*/	
+
+		
 }
   
 /*  void
