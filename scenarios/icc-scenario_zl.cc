@@ -88,6 +88,8 @@ typedef struct timeval TIMER_TYPE;
 
 char scenario[250] = "ICCScenario";
 
+std::set<uint32_t> res;
+
 NS_LOG_COMPONENT_DEFINE (scenario);
 
 // Number generator
@@ -218,8 +220,10 @@ void PrintSeqs (Ptr<PriConsumer> consumer)
 	cout << "Survived the class grab" << endl;
 	std::set<uint32_t>::iterator it;
 
-	std::cout << "myset contains:";
-	for (it=seqset.begin(); it!=seqset.end(); ++it)
+	res.insert(seqset.begin(), seqset.end());
+
+	std::cout << "res now contains:";
+	for (it=res.begin(); it!=res.end(); ++it)
 		std::cout << ' ' << *it;
 	std::cout << '\n';
 
@@ -781,7 +785,7 @@ int main (int argc, char *argv[])
 	// How often should we check the timeouts (milliseconds)
 	double totalCheckTime = 1000;
 	double timeTime = 20;
-	double tmpT = 0;
+	double tmpT = 500;
 	double j = apsec;
 	int k = 0;
 
