@@ -76,6 +76,7 @@ namespace br = boost::random;
 #include <ns3-dev/ns3/ndnSIM/model/pit/ndn-pit-entry-outgoing-face.h>
 
 #include <ns3-dev/ns3/ndnSIM/apps/ndn-consumer.h>
+#include <ns3-dev/ns3/ndnSIM/apps/ndn-consumer-cbr.h>
 
 #include "ndn-priconsumer.h"
 
@@ -209,9 +210,9 @@ PeriodicPitPrinter (Ptr<Node> node)
 	}
 }
 
-void PrintSeqs (Ptr<ndn::PriConsumer> consumer)
+void PrintSeqs (Ptr<PriConsumer> consumer)
 {
-	cout << "Printing sequence numbers to distribute" << endl;
+	cout << "Printing sequence numbers to distribute " << Simulator::Now () << endl;
 
 	std::set<uint32_t> seqset = consumer->GetSeqTimeout ();
 	cout << "Survived the class grab" << endl;
@@ -767,10 +768,9 @@ int main (int argc, char *argv[])
 	}
 
 	// Get the Consumer application
-	Ptr<ndn::PriConsumer> consumer;
-	if (( consumer =
-			DynamicCast<ndn::PriConsumer> (mobileTerminalContainer.Get (0)->GetApplication(0))) != 0)
-		exit(1);
+	Ptr<PriConsumer> consumer = DynamicCast<PriConsumer> (mobileTerminalContainer.Get (0)->GetApplication(0));
+
+	//consumer = mobileTerminalContainer.Get (0)->GetObject <ConsumerCbr> ();
 
 	NS_LOG_INFO ("------Scheduling events - SSID changes------");
 
@@ -804,7 +804,7 @@ int main (int argc, char *argv[])
 		}
 
 		NS_LOG_INFO ("------Testing PIT printing------");
-		Simulator::Schedule (Seconds(j), &PeriodicPitPrinter, wirelessContainer.Get(0));
+		//Simulator::Schedule (Seconds(j), &PeriodicPitPrinter, wirelessContainer.Get(0));
 //	    Simulator::Schedule (Seconds(j), &PITEntryCreator, wirelessContainer.Get(k), wirelessContainer.Get(k+1));
 		j += checkTime;
 		k++;

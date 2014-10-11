@@ -27,19 +27,31 @@ PriConsumer::GetTypeId (void)
 std::set<uint32_t>
 PriConsumer::GetSeqTimeout ()
 {
+	std::cout << "Entering PriConsumer GetSeqTimeout" << std::endl;
 	std::set<uint32_t> currSeqs;
 	uint32_t seqNo;
 
-	std::cout << "About to enter for loop" << std::endl;
-	if (m_seqTimeouts.size () != 0)
+
+
+	std::cout << "Test the inheritance: " << m_seq << std::endl;
+	std::cout << "Does any of this make sense?" << std::endl;
+	uint32_t curr = m_seqTimeouts.size();
+
+	std::cout << "I have a timeout size of: " << curr << std::endl;
+
+	SeqTimeoutsContainer::index<i_timestamp>::type::iterator entry = m_seqTimeouts.get<i_timestamp> ().begin ();
+
+	for (; entry != m_seqTimeouts.get<i_timestamp> ().end (); entry++ )
 	{
-		std::cout << "Test iterator" << std::endl;
-		SeqTimeoutsContainer::index<i_timestamp>::type::iterator entry =
-				m_seqTimeouts.get<i_timestamp> ().begin () ;
+		std::cout << "Attempting a grab" << std::endl;
 
 		seqNo = entry->seq;
-		std::cout << "Obtained one: " << seqNo << std::endl;
+
+		std::cout << "I have obtained a seq of: " << seqNo << " inserting..." << std::endl;
+
 		currSeqs.insert(seqNo);
+
+
 	}
 
 	std::cout << "Returning from GetSeqTimeout" << std::endl;
