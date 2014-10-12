@@ -143,7 +143,27 @@ void SetSSIDviaDistance(uint32_t mtId, Ptr<MobilityModel> node, std::map<std::st
 	SsidDistance.clear();
 }
 
-// Function to change the SSID of a node's Wifi netdevice
+void PrintSeqs (Ptr<PriConsumer> consumer)
+{
+	cout << "Printing sequence numbers to distribute " << Simulator::Now () << endl;
+
+	std::set<uint32_t> seqset = consumer->GetSeqTimeout ();
+	cout << "Survived the class grab" << endl;
+	std::set<uint32_t>::iterator it;
+
+	res.insert(seqset.begin(), seqset.end());
+
+	cout << "res size is " << res.size() << endl;
+
+	std::cout << "res now contains:";
+	for (it=res.begin(); it!=res.end(); ++it)
+		std::cout << ' ' << *it;
+	std::cout << '\n';
+
+	cout << "______________________________" << endl;
+}
+
+// Function to change the SSID of a node's Wifi netdevice and obtain the packets to redirect
 void
 SetSSID (uint32_t mtId, uint32_t deviceId, Ssid ssidName)
 {
@@ -152,6 +172,8 @@ SetSSID (uint32_t mtId, uint32_t deviceId, Ssid ssidName)
 	sprintf(configbuf, "/NodeList/%d/DeviceList/%d/$ns3::WifiNetDevice/Mac/Ssid", mtId, deviceId);
 
 	Config::Set(configbuf, SsidValue(ssidName));
+
+	cout << "Actually ran SetSSID at " << Simulator::Now () << endl;
 }
 
 void
@@ -212,23 +234,7 @@ PeriodicPitPrinter (Ptr<Node> node)
 	}
 }
 
-void PrintSeqs (Ptr<PriConsumer> consumer)
-{
-	cout << "Printing sequence numbers to distribute " << Simulator::Now () << endl;
 
-	std::set<uint32_t> seqset = consumer->GetSeqTimeout ();
-	cout << "Survived the class grab" << endl;
-	std::set<uint32_t>::iterator it;
-
-	res.insert(seqset.begin(), seqset.end());
-
-	std::cout << "res now contains:";
-	for (it=res.begin(); it!=res.end(); ++it)
-		std::cout << ' ' << *it;
-	std::cout << '\n';
-
-	cout << "______________________________" << endl;
-}
   
 /*  void
  //PITEntryCreator(Ptr<Node> old_node, Ptr<Node> new_node)
@@ -784,8 +790,9 @@ int main (int argc, char *argv[])
 	double checkTime = 100.0/realspeed;
 	// How often should we check the timeouts (milliseconds)
 	double totalCheckTime = 1000;
-	double timeTime = 20;
-	double tmpT = 500;
+	double timeTime = 10;
+	double tmpT = 0;
+
 	double j = apsec;
 	int k = 0;
 
@@ -794,14 +801,16 @@ int main (int argc, char *argv[])
 		sprintf(buffer, "Running event at %f", j);
 		NS_LOG_INFO(buffer);
 
-		for (int i = 0; i < mobile && k < 4; i++)
+		Time torun = Seconds(j);
+
+		for (int i = 0; i < mobile && k <= 3; i++)
 		{
-			Simulator::Schedule (Seconds(j), &SetSSID, mobileNodeIds[0], 0, ssidV[k]);
+			Simulator::Schedule (torun, &SetSSID, mobileNodeIds[0], 0, ssidV[k]);
 		}
 
-		while (tmpT <= totalCheckTime && k != 0)
+		while (tmpT <= totalCheckTime && k > 0 && k <= 3)
 		{
-			Time tosche = Seconds(j) + MilliSeconds(tmpT);
+			Time tosche = torun + MilliSeconds(tmpT);
 			cout << "Running packet sequence event at " << tosche << endl;
 			Simulator::Schedule (tosche, &PrintSeqs, consumer);
 			tmpT += timeTime;
@@ -811,8 +820,8 @@ int main (int argc, char *argv[])
 		//Simulator::Schedule (Seconds(j), &PeriodicPitPrinter, wirelessContainer.Get(0));
 //	    Simulator::Schedule (Seconds(j), &PITEntryCreator, wirelessContainer.Get(k), wirelessContainer.Get(k+1));
 		j += checkTime;
-		k++;
 		tmpT = 0;
+		k++;
 	}
 
 
