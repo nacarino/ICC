@@ -151,7 +151,19 @@ void PrintSeqs (Ptr<PriConsumer> consumer)
 	cout << "Survived the class grab" << endl;
 	std::set<uint32_t>::iterator it;
 
-	res.insert(seqset.begin(), seqset.end());
+	std::set<uint32_t> diff;
+
+	std::set_difference(seqset.begin(), seqset.end(), res.begin(), res.end(),
+			std::inserter(diff, diff.begin()));
+
+	cout << "Retransmission packet number: " << diff.size () << endl;
+
+	std::cout << "diff now contains:";
+	for (it=diff.begin(); it!=diff.end(); ++it)
+		std::cout << ' ' << *it;
+	std::cout << '\n';
+
+	res.insert(diff.begin(), diff.end());
 
 	cout << "res size is " << res.size() << endl;
 
@@ -779,6 +791,29 @@ int main (int argc, char *argv[])
 
 	// Get the Consumer application
 	Ptr<PriConsumer> consumer = DynamicCast<PriConsumer> (mobileTerminalContainer.Get (0)->GetApplication(0));
+
+	for (int i = 0; i < centralContainer.GetN(); i++ ) {
+
+		Ptr<Node> tmp = centralContainer.Get (i);
+
+		uint32_t nid = tmp->GetId();
+
+		Ptr<L3Protocol> protocol =tmp->GetObject <L3Protocol>();
+		Ptr<Pit> pit = tmp->GetObject <Pit>();
+
+		uint32_t size = protocol->GetNFaces();
+
+		cout << "Node " << nid << " has " << size << " interfaces!!" << endl;
+		cout << "Printing current PIT entries" << endl;
+
+		for ( Ptr<pit::Entry> entry = pit->Begin(); entry != pit->End(); entry = pit->Next(entry))
+		{
+			cout << entry << endl;
+		}
+
+		cout << "__________________________" << endl;
+
+	}
 
 	//consumer = mobileTerminalContainer.Get (0)->GetObject <ConsumerCbr> ();
 
