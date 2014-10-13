@@ -76,36 +76,31 @@ SmartFloodingInf::SatisfyPendingInterest (Ptr<Face> inFace, Ptr<const Data> data
 		// Keep list of Faces seen to later check
 		seen_face.insert(incoming.m_face);
 	}
+	Time now = Simulator::Now ();
 
 	// Check if we have the redirect turned on
-	if (m_redirect) {
-		Time now = Simulator::Now ();
+	if (m_redirect && m_start <= now && now <= m_stop) {
+		// Iterator
+		std::set<Ptr<Face> >::iterator it;
 
-		// Check if we are in the redirection time
-		if (m_start <= now && now <= m_stop)
+		// Place to keep the difference of the set we have and what we have seen
+		std::set<Ptr<Face> > diff;
+
+		std::set_difference(redirectFaces.begin(), redirectFaces.end(), seen_face.begin(), seen_face.end(),
+				std::inserter(diff, diff.begin()));
+
+		for (it = diff.begin(); it != diff.end(); it++)
 		{
-			// Iterator
-			std::set<Ptr<Face> >::iterator it;
+			Ptr<Face> touse = (*it);
+			bool ok = touse->SendData (data);
 
-			// Place to keep the difference of the set we have and what we have seen
-			std::set<Ptr<Face> > diff;
+			DidSendOutData (inFace, touse, data, pitEntry);
+			NS_LOG_DEBUG ("Satisfy " << touse);
 
-			std::set_difference(redirectFaces.begin(), redirectFaces.end(), seen_face.begin(), seen_face.end(),
-						std::inserter(diff, diff.begin()));
-
-			for (it = diff.begin(); it != diff.end(); it++)
+			if (!ok)
 			{
-				Ptr<Face> touse = (*it);
-				bool ok = touse->SendData (data);
-
-				DidSendOutData (inFace, touse, data, pitEntry);
-				NS_LOG_DEBUG ("Satisfy " << touse);
-
-				if (!ok)
-				{
-					m_dropData (data, touse);
-					NS_LOG_DEBUG ("Cannot satisfy data to " << touse);
-				}
+				m_dropData (data, touse);
+				NS_LOG_DEBUG ("Cannot satisfy data to " << touse);
 			}
 		}
 	}
@@ -132,30 +127,42 @@ SmartFloodingInf::OnData (Ptr<Face> inFace, Ptr<Data> data)
 	// Check if we are in the redirection time
 	if (m_data_redirect && m_start <= now && now <= m_stop)
 	{
-		// If so, there is a huge chance that the Data we have received, doesn't
-		// have a PIT entry, so we create it
 		// Iterator
 		std::set<Ptr<Face> >::iterator it;
 
-		// Create a Nonce
-		UniformVariable m_rand = UniformVariable(0, std::numeric_limits<uint32_t>::max ());
-
-		// Obtain the name from the Data packet
-		Ptr<ndn::Name> incoming_name = Create<ndn::Name> (data->GetName());
-
-		// Create the Interest packet using the information we have
-		Ptr<Interest> interest = Create<Interest> ();
-		interest->SetNonce               (m_rand.GetValue ());
-		interest->SetName                (incoming_name);
-		interest->SetInterestLifetime    (Seconds (2));
-
-		// Create a newly created PIT Entry
-		Ptr<pit::Entry> pitEntry = m_pit->Create (interest);
-
-		// Add all the interfaces specified by dataRedirect
-		for (it = dataRedirect.begin(); it != dataRedirect.end(); it++)
+		Ptr<pit::Entry> pitEntry = m_pit->Lookup (*data);
+		if (pitEntry == 0)
 		{
-			pitEntry->AddIncoming(*it);
+			// If so, there is a huge chance that the Data we have received, doesn't
+			// have a PIT entry, so we create it
+
+
+			// Create a Nonce
+			UniformVariable m_rand = UniformVariable(0, std::numeric_limits<uint32_t>::max ());
+
+			// Obtain the name from the Data packet
+			Ptr<ndn::Name> incoming_name = Create<ndn::Name> (data->GetName());
+
+			// Create the Interest packet using the information we have
+			Ptr<Interest> interest = Create<Interest> ();
+			interest->SetNonce               (m_rand.GetValue ());
+			interest->SetName                (incoming_name);
+			interest->SetInterestLifetime    (Seconds (2));
+
+			// Create a newly created PIT Entry
+			pitEntry = m_pit->Create (interest);
+
+			// Add all the interfaces specified by dataRedirect
+			for (it = dataRedirect.begin(); it != dataRedirect.end(); it++)
+			{
+				pitEntry->AddIncoming(*it);
+			}
+		} else
+		{
+			for (it = dataRedirect.begin(); it != dataRedirect.end(); it++)
+			{
+				pitEntry->AddIncoming(*it);
+			}
 		}
 	}
 

@@ -302,6 +302,9 @@ setupRedirection (Ptr<Node> n_node, uint32_t faceId, Time start, Time end)
 	stra->m_start = start;
 	stra->m_stop = end;
 	stra->m_redirect = true;
+	stra->m_data_redirect = false;
+	stra->dataRedirect.clear();
+	stra->redirectFaces.clear();
 	stra->redirectFaces.insert(n_face);
 	cout << "______________________________" << endl;
 }
@@ -320,7 +323,10 @@ setupDataRedirection (Ptr<Node> n_node, uint32_t faceId, Time start, Time end)
 
 	stra->m_start = start;
 	stra->m_stop = end;
+	stra->m_redirect = false;
 	stra->m_data_redirect = true;
+	stra->dataRedirect.clear();
+	stra->redirectFaces.clear();
 	stra->dataRedirect.insert(n_face);
 	cout << "++++++++++++++++++++++++++++++" << endl;
 }
@@ -885,10 +891,13 @@ int main (int argc, char *argv[])
 
 		Time torun = Seconds(j);
 		Time infdelay = torun - Seconds(1);
-		Time tostop = torun + Seconds(1);
+
 
 		for (int i = 0; i < mobile && k <= 3; i++)
 			Simulator::Schedule (torun, &SetSSID, mobileNodeIds[0], 0, ssidV[k]);
+
+		torun += MilliSeconds (1);
+		Time tostop = torun + MilliSeconds (10);
 
 		if (smartInf) {
 			if (k == 1)
@@ -916,6 +925,8 @@ int main (int argc, char *argv[])
 
 			if (k == 3)
 			{
+				torun += MilliSeconds (308);
+				tostop += MilliSeconds (308);
 				// Central node
 				Simulator::Schedule (infdelay, &setupRedirection, centralContainer.Get (1), 1, torun, tostop);
 
