@@ -79,6 +79,7 @@ namespace br = boost::random;
 #include <ns3-dev/ns3/ndnSIM/apps/ndn-consumer-cbr.h>
 
 #include "ndn-priconsumer.h"
+#include "smart-flooding-inf.h"
 
 
 typedef struct timeval TIMER_TYPE;
@@ -246,25 +247,84 @@ PeriodicPitPrinter (Ptr<Node> node)
 	}
 }
 
-
-  
-/*  void
- //PITEntryCreator(Ptr<Node> old_node, Ptr<Node> new_node)
-PITEntryCreator(Ptr<Entry>,Ptr<Node> old_node, Ptr<Node> new_node)
+/**
+   * \brief NDN to act as if a NNN INF packet was received
+   * \param n_node The node you wish to manipulate
+   * \param faceId The node relative Face Id you wish to add to the PITs
+   */
+void
+INFObtained (Ptr<Node> n_node, uint32_t faceId)
 {
-	Ptr<ndn::Pit> old_pit = old_node->GetObject<ndn::Pit> ();
-	cout << "Old_AP_Node: " << old_node->GetId () << endl; 
-	vector<Name> nameprefix;
-	for (Ptr<ndn::pit::Entry> old_entry = old_pit->Begin (); old_entry != old_pit->End (); old_entry = old_pit->Next (old_entry))
+	cout << "Entering INFObtained" << endl;
+
+	Ptr<L3Protocol> protocol = n_node->GetObject <L3Protocol> ();
+	Ptr<Pit> pit = n_node->GetObject <Pit> ();
+	Ptr<Face> n_face = protocol->GetFace(faceId);
+
+	// Cycle through the PIT entries for the node
+	for ( Ptr<pit::Entry> entry = pit->Begin(); entry != pit->End(); entry = pit->Next(entry))
 	{
-		nameprefix.push_back (old_entry->GetPrefix());
+		bool addMe = true;
+		cout << entry << endl;
+
+		// Cycle through the interfaces
+		BOOST_FOREACH (const pit::IncomingFace &incoming, entry->GetIncoming ())
+		{
+			// Check if they match to the interface we would like to add
+			if (incoming.m_face == n_face)
+			{
+				addMe = false;
+				break;
+			}
+		}
+
+		if (addMe) {
+			entry->AddIncoming(n_face);
+			cout << "INFObtained: Adding face " << faceId << endl;
+		}
 	}
-	for (int i=0; i<nameprefix.size();i++){
-	    cout << nameprefix[i] << endl;
-	  }
-	Ptr<ndn::Pit> new_pit = new_node->GetObject<ndn::Pit> ();
+
+	cout << "Leaving INFObtained" << endl;
 }
-*/  
+
+void
+setupRedirection (Ptr<Node> n_node, uint32_t faceId, Time start, Time end)
+{
+	cout << "______________________________" << endl;
+	cout << "Setting up Satisfied Interest redirection for node " << n_node->GetId () << endl;
+	cout << "Start " << start << ", End " << end << endl;
+	cout << "Adding Face " << faceId << endl;
+
+	Ptr<fw::SmartFloodingInf> stra = n_node->GetObject <fw::SmartFloodingInf> ();
+	Ptr<L3Protocol> protocol = n_node->GetObject <L3Protocol> ();
+	Ptr<Face> n_face = protocol->GetFace(faceId);
+
+	stra->m_start = start;
+	stra->m_stop = end;
+	stra->m_redirect = true;
+	stra->redirectFaces.insert(n_face);
+	cout << "______________________________" << endl;
+}
+
+void
+setupDataRedirection (Ptr<Node> n_node, uint32_t faceId, Time start, Time end)
+{
+	cout << "++++++++++++++++++++++++++++++" << endl;
+	cout << "Setting up Data only redirection for node " << n_node->GetId () << endl;
+	cout << "Start " << start << ", End " << end << endl;
+	cout << "Adding Face " << faceId << endl;
+
+	Ptr<fw::SmartFloodingInf> stra = n_node->GetObject <fw::SmartFloodingInf> ();
+	Ptr<L3Protocol> protocol = n_node->GetObject <L3Protocol> ();
+	Ptr<Face> n_face = protocol->GetFace(faceId);
+
+	stra->m_start = start;
+	stra->m_stop = end;
+	stra->m_data_redirect = true;
+	stra->dataRedirect.insert(n_face);
+	cout << "++++++++++++++++++++++++++++++" << endl;
+}
+
 int main (int argc, char *argv[])
 {
 	// These are our scenario arguments
@@ -280,6 +340,7 @@ int main (int argc, char *argv[])
 	bool traceFiles = false;                      // Tells to run the simulation with traceFiles
 	bool smart = false;                           // Tells to run the simulation with SmartFlooding
 	bool bestr = false;                           // Tells to run the simulation with BestRoute
+	bool smartInf = false;                        // Tells to run the simulation with SmartFlooding INF style
 	bool walk = true;                             // Do random walk at walking speed
 	double speed= 5;							  // MN's speed	change here (1.4 | 8.3 | 16.7)
 	bool wifig = false;
@@ -305,6 +366,7 @@ int main (int argc, char *argv[])
 	cmd.AddValue ("fake", "Enable fake interest", fake);
 	cmd.AddValue ("trace", "Enable trace files", traceFiles);
 	cmd.AddValue ("smart", "Enable SmartFlooding forwarding", smart);
+	cmd.AddValue ("sinf", "Enable SmartFlooding with INF", smartInf);
 	cmd.AddValue ("bestr", "Enable BestRoute forwarding", bestr);
 	cmd.AddValue ("csSize", "Number of Interests a Content Store can maintain", csSize);
 	cmd.AddValue ("walk", "Enable random walk at walking speed", walk);
@@ -446,6 +508,7 @@ int main (int argc, char *argv[])
 	allNdnNodes.Add (centralContainer);
 	allNdnNodes.Add (wirelessContainer);
 
+
 	// Container for server (producer) nodes
 	NodeContainer serverNodes;
 	serverNodes.Create (servers);
@@ -461,7 +524,9 @@ int main (int argc, char *argv[])
 	// Container for all nodes without NDN specific capabilities
 	NodeContainer allUserNodes;
 	allUserNodes.Add (mobileTerminalContainer);
-	allUserNodes.Add (serverNodes);
+	//allUserNodes.Add (serverNodes);
+
+	allNdnNodes.Add (serverNodes);
 
 	// Container for each AP to be identified
 	NodeContainer SSID1;
@@ -666,6 +731,10 @@ int main (int argc, char *argv[])
 		sprintf(routeType, "%s", "bestr");
 		NS_LOG_INFO ("NDN Utilizing BestRoute");
 		ndnHelperRouters.SetForwardingStrategy ("ns3::ndn::fw::BestRoute::PerOutFaceLimits", "Limit", "ns3::ndn::Limits::Window");
+	} else if (smartInf) {
+		sprintf(routeType, "%s", "smartinf");
+		NS_LOG_INFO ("NDN Utilizing SmartFlooding with INF");
+		ndnHelperRouters.SetForwardingStrategy ("ns3::ndn::fw::SmartFloodingInf");
 	} else {
 		sprintf(routeType, "%s", "flood");
 		NS_LOG_INFO ("NDN Utilizing Flooding");
@@ -792,29 +861,6 @@ int main (int argc, char *argv[])
 	// Get the Consumer application
 	Ptr<PriConsumer> consumer = DynamicCast<PriConsumer> (mobileTerminalContainer.Get (0)->GetApplication(0));
 
-	for (int i = 0; i < centralContainer.GetN(); i++ ) {
-
-		Ptr<Node> tmp = centralContainer.Get (i);
-
-		uint32_t nid = tmp->GetId();
-
-		Ptr<L3Protocol> protocol =tmp->GetObject <L3Protocol>();
-		Ptr<Pit> pit = tmp->GetObject <Pit>();
-
-		uint32_t size = protocol->GetNFaces();
-
-		cout << "Node " << nid << " has " << size << " interfaces!!" << endl;
-		cout << "Printing current PIT entries" << endl;
-
-		for ( Ptr<pit::Entry> entry = pit->Begin(); entry != pit->End(); entry = pit->Next(entry))
-		{
-			cout << entry << endl;
-		}
-
-		cout << "__________________________" << endl;
-
-	}
-
 	//consumer = mobileTerminalContainer.Get (0)->GetObject <ConsumerCbr> ();
 
 	NS_LOG_INFO ("------Scheduling events - SSID changes------");
@@ -825,7 +871,7 @@ int main (int argc, char *argv[])
 	double checkTime = 100.0/realspeed;
 	// How often should we check the timeouts (milliseconds)
 	double totalCheckTime = 1000;
-	double timeTime = 10;
+	double timeTime = 5;
 	double tmpT = 0;
 
 	double j = apsec;
@@ -836,22 +882,58 @@ int main (int argc, char *argv[])
 		sprintf(buffer, "Running event at %f", j);
 		NS_LOG_INFO(buffer);
 
+
 		Time torun = Seconds(j);
+		Time infdelay = torun - Seconds(1);
+		Time tostop = torun + Seconds(1);
 
 		for (int i = 0; i < mobile && k <= 3; i++)
-		{
 			Simulator::Schedule (torun, &SetSSID, mobileNodeIds[0], 0, ssidV[k]);
+
+		if (smartInf) {
+			if (k == 1)
+			{
+				// Central node
+				Simulator::Schedule (infdelay, &setupRedirection, centralContainer.Get (0), 1, torun, tostop);
+
+				// AP node
+				Simulator::Schedule (infdelay, &setupDataRedirection, wirelessContainer.Get (1), 1, torun, tostop);
+			}
+
+
+			if (k == 2)
+			{
+				// Schedule changes
+				// Server
+				Simulator::Schedule (infdelay, &setupRedirection, serverNodes.Get (0), 1, torun, tostop);
+
+				// Central node
+				Simulator::Schedule (infdelay, &setupDataRedirection, centralContainer.Get (1), 0, torun, tostop);
+
+				// Ap node
+				Simulator::Schedule (infdelay, &setupDataRedirection, wirelessContainer.Get (2), 1, torun, tostop);
+			}
+
+			if (k == 3)
+			{
+				// Central node
+				Simulator::Schedule (infdelay, &setupRedirection, centralContainer.Get (1), 1, torun, tostop);
+
+				// Ap node
+				Simulator::Schedule (infdelay, &setupDataRedirection, wirelessContainer.Get (3), 1, torun, tostop);
+			}
 		}
 
-		while (tmpT <= totalCheckTime && k > 0 && k <= 3)
-		{
-			Time tosche = torun + MilliSeconds(tmpT);
-			cout << "Running packet sequence event at " << tosche << endl;
-			Simulator::Schedule (tosche, &PrintSeqs, consumer);
-			tmpT += timeTime;
-		}
-
-		NS_LOG_INFO ("------Testing PIT printing------");
+//		while (tmpT <= totalCheckTime && k > 0 && k <= 3)
+//		{
+//			Time tosche = torun + MilliSeconds(tmpT);
+//			cout << "Running packet sequence event at " << tosche << endl;
+//			//Simulator::Schedule (tosche, &PrintSeqs, consumer);
+//			Simulator::Schedule (tosche, &INFObtained, centralContainer.Get (1), 2);
+//			tmpT += timeTime;
+//		}
+//
+//		NS_LOG_INFO ("------Testing PIT printing------");
 		//Simulator::Schedule (Seconds(j), &PeriodicPitPrinter, wirelessContainer.Get(0));
 //	    Simulator::Schedule (Seconds(j), &PITEntryCreator, wirelessContainer.Get(k), wirelessContainer.Get(k+1));
 		j += checkTime;
