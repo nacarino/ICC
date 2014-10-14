@@ -64,7 +64,7 @@ public:
 			Ptr<Data> data);
 
 	Time m_start;
-	Time m_stop;
+	//Time m_stop;
 	bool m_redirect;
 	bool m_data_redirect;
 

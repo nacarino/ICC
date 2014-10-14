@@ -40,7 +40,7 @@ SmartFloodingInf::GetTypeId (void)
 
 SmartFloodingInf::SmartFloodingInf()
  : m_start         (0)
- , m_stop          (0)
+ //, m_stop          (0)
  , m_redirect      (false)
  , m_data_redirect (false)
 {
@@ -79,7 +79,7 @@ SmartFloodingInf::SatisfyPendingInterest (Ptr<Face> inFace, Ptr<const Data> data
 	Time now = Simulator::Now ();
 
 	// Check if we have the redirect turned on
-	if (m_redirect && m_start <= now && now <= m_stop) {
+	if (m_redirect && m_start <= now /*&& now <= m_stop*/) {
 		// Iterator
 		std::set<Ptr<Face> >::iterator it;
 
@@ -125,7 +125,7 @@ SmartFloodingInf::OnData (Ptr<Face> inFace, Ptr<Data> data)
 	Time now = Simulator::Now ();
 
 	// Check if we are in the redirection time
-	if (m_data_redirect && m_start <= now && now <= m_stop)
+	if (m_data_redirect && m_start <= now /* && now <= m_stop */)
 	{
 		// Iterator
 		std::set<Ptr<Face> >::iterator it;

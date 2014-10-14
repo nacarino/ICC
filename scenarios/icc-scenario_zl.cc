@@ -89,12 +89,27 @@ typedef struct timeval TIMER_TYPE;
 
 char scenario[250] = "ICCScenario";
 
-std::set<uint32_t> res;
+
 
 NS_LOG_COMPONENT_DEFINE (scenario);
 
 // Number generator
 br::mt19937_64 gen;
+
+// Global information to use in callbacks
+std::set<uint32_t> res;
+std::map<Mac48Address,Ptr<Node> > seen_macs;
+NodeContainer NCaps;
+NodeContainer NCcenters;
+NodeContainer NCmobiles;
+NodeContainer NCservers;
+
+std::vector<Mac48Address> mac_queue;
+uint32_t numqueue = 0;
+bool sectorChange = false;
+
+std::vector<YansWifiPhyHelper> yanhelpers;
+std::map<uint32_t, Ptr<YansWifiChannel> > channels;
 
 // Obtains a random number from a uniform distribution between min and max.
 // Must seed number generator to ensure randomness at runtime.
@@ -185,6 +200,12 @@ SetSSID (uint32_t mtId, uint32_t deviceId, Ssid ssidName)
 	sprintf(configbuf, "/NodeList/%d/DeviceList/%d/$ns3::WifiNetDevice/Mac/Ssid", mtId, deviceId);
 
 	Config::Set(configbuf, SsidValue(ssidName));
+
+	sprintf(configbuf, "/NodeList/%d/DeviceList/%d/$ns3::WifiNetDevice/Channel", mtId, deviceId);
+
+	Config::Set(configbuf, PointerValue(channels[mtId]));
+
+	sectorChange = true;
 
 	cout << "Actually ran SetSSID at " << Simulator::Now () << endl;
 }
@@ -292,7 +313,7 @@ setupRedirection (Ptr<Node> n_node, uint32_t faceId, Time start, Time end)
 {
 	cout << "______________________________" << endl;
 	cout << "Setting up Satisfied Interest redirection for node " << n_node->GetId () << endl;
-	cout << "Start " << start << ", End " << end << endl;
+	cout << "Start: " << start << endl;
 	cout << "Adding Face " << faceId << endl;
 
 	Ptr<fw::SmartFloodingInf> stra = n_node->GetObject <fw::SmartFloodingInf> ();
@@ -300,7 +321,7 @@ setupRedirection (Ptr<Node> n_node, uint32_t faceId, Time start, Time end)
 	Ptr<Face> n_face = protocol->GetFace(faceId);
 
 	stra->m_start = start;
-	stra->m_stop = end;
+	//stra->m_stop = end;
 	stra->m_redirect = true;
 	stra->m_data_redirect = false;
 	stra->dataRedirect.clear();
@@ -314,7 +335,7 @@ setupDataRedirection (Ptr<Node> n_node, uint32_t faceId, Time start, Time end)
 {
 	cout << "++++++++++++++++++++++++++++++" << endl;
 	cout << "Setting up Data only redirection for node " << n_node->GetId () << endl;
-	cout << "Start " << start << ", End " << end << endl;
+	cout << "Start: " << start << endl;
 	cout << "Adding Face " << faceId << endl;
 
 	Ptr<fw::SmartFloodingInf> stra = n_node->GetObject <fw::SmartFloodingInf> ();
@@ -322,13 +343,136 @@ setupDataRedirection (Ptr<Node> n_node, uint32_t faceId, Time start, Time end)
 	Ptr<Face> n_face = protocol->GetFace(faceId);
 
 	stra->m_start = start;
-	stra->m_stop = end;
+	//stra->m_stop = end;
 	stra->m_redirect = false;
 	stra->m_data_redirect = true;
 	stra->dataRedirect.clear();
 	stra->redirectFaces.clear();
 	stra->dataRedirect.insert(n_face);
 	cout << "++++++++++++++++++++++++++++++" << endl;
+}
+
+void
+turnoffDataRedirection (Ptr<Node> n_node)
+{
+	cout << "------------------------------" << endl;
+	cout << Simulator::Now () << endl;
+	cout << "Turning off Data redirect for node " << n_node->GetId () << endl;
+	Ptr<fw::SmartFloodingInf> stra = n_node->GetObject <fw::SmartFloodingInf> ();
+	stra->m_data_redirect = false;
+	cout << "------------------------------" << endl;
+}
+
+void
+turnoffRedirection (Ptr<Node> n_node)
+{
+	cout << "------------------------------" << endl;
+	cout << Simulator::Now () << endl;
+	cout << "Turning off redirect for node " << n_node->GetId () << endl;
+	Ptr<fw::SmartFloodingInf> stra = n_node->GetObject <fw::SmartFloodingInf> ();
+	stra->m_redirect = false;
+	cout << "------------------------------" << endl;
+}
+
+Ptr<Node>
+GetAssociatedNode (NodeContainer nc, Mac48Address mac)
+{
+	Ptr<Node> n_ret = 0;
+	Address cmac = mac.operator ns3::Address();
+
+	for (int i = 0; i < nc.GetN (); i++)
+	{
+		Ptr<Node> n_tmp = nc.Get (i);
+
+		for (int j = 0; j < n_tmp->GetNDevices(); j++)
+		{
+			Ptr<NetDevice> n_dev = n_tmp->GetDevice (j);
+
+			if (n_dev->GetAddress () == cmac)
+			{
+				n_ret = n_tmp;
+				break;
+			}
+		}
+
+		if (n_ret != 0)
+			break;
+	}
+
+	return n_ret;
+}
+
+void
+apAssociation (const Mac48Address mac)
+{
+	Time now = Simulator::Now ();
+	cout << "Associated to " <<  mac << " at " << now << endl;
+
+	if (seen_macs.empty()) {
+		cout << "First time seeing a MAC Address" << endl;
+		// We haven't seen any APs, save
+		seen_macs[mac] = GetAssociatedNode(NCaps, mac);
+
+		mac_queue.push_back(mac);
+		numqueue++;
+	} else if (seen_macs.find(mac) != seen_macs.end()) {
+		cout << "Reassociating to same node, ignore " << endl;
+	} else {
+		cout << "Hit a new MAC, reassociating" << endl;
+
+		// We got something that wasn't in our map, means new AP
+		seen_macs[mac] = GetAssociatedNode(NCaps, mac);
+
+		mac_queue.push_back(mac);
+		numqueue++;
+		cout << "Have seen " << numqueue << " MACs" << endl;
+		switch (numqueue)
+		{
+		case 2:
+			turnoffRedirection(NCcenters.Get (0));
+			turnoffDataRedirection(GetAssociatedNode(NCaps, mac_queue[numqueue-1]));
+			break;
+		case 3:
+			turnoffRedirection(NCservers.Get (0));
+			turnoffDataRedirection(NCcenters.Get (1));
+			turnoffDataRedirection(GetAssociatedNode(NCaps, mac_queue[numqueue-1]));
+			break;
+		case 4:
+			turnoffDataRedirection(NCcenters.Get (1));
+			turnoffDataRedirection(GetAssociatedNode(NCaps, mac_queue[numqueue-1]));
+			break;
+		}
+	}
+	sectorChange = false;
+	cout << "Exiting apAssociation!" << endl;
+}
+
+void
+apDeassociation (const Mac48Address mac)
+{
+	Time now = Simulator::Now ();
+	cout << "Deassociated from " << mac << " at " << now << endl;
+
+	if (sectorChange) {
+		cout << "Executing sector change!" << endl;
+//		switch (numqueue)
+//		{
+//		case 1:
+//			setupRedirection(NCcenters.Get (0), 1, now, now);
+//			setupDataRedirection(NCaps.Get (1), 1, now, now);
+//			break;
+//		case 2:
+//			setupRedirection(NCservers.Get (0), 2, now, now);
+//			setupDataRedirection(NCcenters.Get(1), 0, now, now);
+//			setupDataRedirection(NCaps.Get (2), 1, now, now);
+//			break;
+//		case 3:
+//			setupRedirection(NCcenters.Get (1), 1, now, now);
+//			setupDataRedirection(NCaps.Get (3), 1, now, now);
+//			break;
+//		}
+	}
+	cout << "Exiting apDeassociation!" << endl;
 }
 
 int main (int argc, char *argv[])
@@ -514,7 +658,6 @@ int main (int argc, char *argv[])
 	allNdnNodes.Add (centralContainer);
 	allNdnNodes.Add (wirelessContainer);
 
-
 	// Container for server (producer) nodes
 	NodeContainer serverNodes;
 	serverNodes.Create (servers);
@@ -533,6 +676,11 @@ int main (int argc, char *argv[])
 	//allUserNodes.Add (serverNodes);
 
 	allNdnNodes.Add (serverNodes);
+
+	NCaps = wirelessContainer;
+	NCcenters = centralContainer;
+	NCmobiles = mobileTerminalContainer;
+	NCservers = serverNodes;
 
 	// Container for each AP to be identified
 	NodeContainer SSID1;
@@ -656,10 +804,19 @@ int main (int argc, char *argv[])
 
 	// All interfaces are placed on the same channel. Makes AP changes easy. Might
 	// have to be reconsidered for multiple mobile nodes
-	YansWifiPhyHelper wifiPhyHelper = YansWifiPhyHelper::Default ();
-	wifiPhyHelper.SetChannel (wifiChannel.Create ());
-	wifiPhyHelper.Set("TxPowerStart", DoubleValue(16.0206));
-	wifiPhyHelper.Set("TxPowerEnd", DoubleValue(16.0206));
+
+
+	for (int i = 0; i < wnodes; i++) {
+		YansWifiPhyHelper wifiPhyHelper = YansWifiPhyHelper::Default ();
+		uint32_t tmp = wirelessContainer.Get (0)->GetId();
+		channels[tmp] = wifiChannel.Create ();
+		wifiPhyHelper.SetChannel (channels[tmp]);
+		wifiPhyHelper.Set("TxPowerStart", DoubleValue(16.0206));
+		wifiPhyHelper.Set("TxPowerEnd", DoubleValue(16.0206));
+
+		yanhelpers.push_back(wifiPhyHelper);
+	}
+
 
 	// Add a simple no QoS based card to the Wifi interfaces
 	NqosWifiMacHelper wifiMacHelper = NqosWifiMacHelper::Default ();
@@ -699,7 +856,7 @@ int main (int argc, char *argv[])
 						   "BeaconGeneration", BooleanValue (true),
 						   "BeaconInterval", TimeValue (Seconds (0.1)));
 
-		wifiAPNetDevices.push_back (wifi.Install (wifiPhyHelper, wifiMacHelper, wirelessContainer.Get (i)));
+		wifiAPNetDevices.push_back (wifi.Install (yanhelpers[i], wifiMacHelper, wirelessContainer.Get (i)));
 	}
 
 	// Create a Wifi station with a modified Station MAC.
@@ -707,7 +864,7 @@ int main (int argc, char *argv[])
 			"Ssid", SsidValue (ssidV[0]),
 			"ActiveProbing", BooleanValue (true));
 
-	NetDeviceContainer wifiMTNetDevices = wifi.Install (wifiPhyHelper, wifiMacHelper, mobileTerminalContainer);
+	NetDeviceContainer wifiMTNetDevices = wifi.Install (yanhelpers[0], wifiMacHelper, mobileTerminalContainer);
 
 	// Using the same calculation from the Yans-wifi-Channel, we obtain the Mobility Models for the
 	// mobile node as well as all the Wifi capable nodes
@@ -871,6 +1028,21 @@ int main (int argc, char *argv[])
 
 	NS_LOG_INFO ("------Scheduling events - SSID changes------");
 
+	char configbuf[250];
+
+	for (int i = 0; i < mobileTerminalContainer.GetN (); i++)
+	{
+		// When associating
+		sprintf(configbuf, "/NodeList/%d/DeviceList/%d/$ns3::WifiNetDevice/Mac/$ns3::StaWifiMac/Assoc", mobileTerminalContainer.Get (i)->GetId(), 0);
+		// Connect to the tracing
+		Config::ConnectWithoutContext(configbuf, MakeCallback(&apAssociation));
+
+		// When disassociating
+		sprintf(configbuf, "/NodeList/%d/DeviceList/%d/$ns3::WifiNetDevice/Mac/$ns3::StaWifiMac/DeAssoc", mobileTerminalContainer.Get (i)->GetId(), 0);
+		// Connect to the tracing
+		Config::ConnectWithoutContext(configbuf, MakeCallback(&apDeassociation));
+	}
+
 	// Schedule AP Changes
 	double apsec = 0.0;
 	// How often should the AP check it's distance
@@ -894,44 +1066,37 @@ int main (int argc, char *argv[])
 
 
 		for (int i = 0; i < mobile && k <= 3; i++)
-			Simulator::Schedule (torun, &SetSSID, mobileNodeIds[0], 0, ssidV[k]);
-
-		torun += MilliSeconds (1);
-		Time tostop = torun + MilliSeconds (10);
+			Simulator::Schedule (torun, &SetSSID, mobileNodeIds[i], 0, ssidV[k]);
 
 		if (smartInf) {
 			if (k == 1)
 			{
 				// Central node
-				Simulator::Schedule (infdelay, &setupRedirection, centralContainer.Get (0), 1, torun, tostop);
-
+				Simulator::Schedule (torun, &setupRedirection, centralContainer.Get (0), 1, torun, torun);
 				// AP node
-				Simulator::Schedule (infdelay, &setupDataRedirection, wirelessContainer.Get (1), 1, torun, tostop);
+				Simulator::Schedule (torun, &setupDataRedirection, wirelessContainer.Get (1), 1, torun, torun);
 			}
-
 
 			if (k == 2)
 			{
 				// Schedule changes
 				// Server
-				Simulator::Schedule (infdelay, &setupRedirection, serverNodes.Get (0), 1, torun, tostop);
+				Simulator::Schedule (torun, &setupRedirection, serverNodes.Get (0), 1, torun, torun);
 
 				// Central node
-				Simulator::Schedule (infdelay, &setupDataRedirection, centralContainer.Get (1), 0, torun, tostop);
+				Simulator::Schedule (torun, &setupDataRedirection, centralContainer.Get (1), 0, torun, torun);
 
 				// Ap node
-				Simulator::Schedule (infdelay, &setupDataRedirection, wirelessContainer.Get (2), 1, torun, tostop);
+				Simulator::Schedule (torun, &setupDataRedirection, wirelessContainer.Get (2), 1, torun, torun);
 			}
 
 			if (k == 3)
 			{
-				torun += MilliSeconds (308);
-				tostop += MilliSeconds (308);
 				// Central node
-				Simulator::Schedule (infdelay, &setupRedirection, centralContainer.Get (1), 1, torun, tostop);
+				Simulator::Schedule (torun, &setupRedirection, centralContainer.Get (1), 1, torun, torun);
 
 				// Ap node
-				Simulator::Schedule (infdelay, &setupDataRedirection, wirelessContainer.Get (3), 1, torun, tostop);
+				Simulator::Schedule (torun, &setupDataRedirection, wirelessContainer.Get (3), 1, torun, torun);
 			}
 		}
 
@@ -951,8 +1116,6 @@ int main (int argc, char *argv[])
 		tmpT = 0;
 		k++;
 	}
-
-
 
 	NS_LOG_INFO ("------Ready for execution!------");
 
