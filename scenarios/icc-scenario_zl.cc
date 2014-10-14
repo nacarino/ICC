@@ -195,19 +195,27 @@ void PrintSeqs (Ptr<PriConsumer> consumer)
 void
 SetSSID (uint32_t mtId, uint32_t deviceId, Ssid ssidName)
 {
+	Time now = Simulator::Now ();
+	cout << "Set SSID " << ssidName << " to device " << deviceId << " at " <<  now << endl;
 	char configbuf[250];
 
 	sprintf(configbuf, "/NodeList/%d/DeviceList/%d/$ns3::WifiNetDevice/Mac/Ssid", mtId, deviceId);
 
 	Config::Set(configbuf, SsidValue(ssidName));
 
-	sprintf(configbuf, "/NodeList/%d/DeviceList/%d/$ns3::WifiNetDevice/Channel", mtId, deviceId);
+//	if (deviceId > 0)
+//	{
+//		cout << "Set SSID " << ssidName << " to device " << deviceId-1 << " at " <<  now << endl;
+//		sprintf(configbuf, "/NodeList/%d/DeviceList/%d/$ns3::WifiNetDevice/Mac/Ssid", mtId, deviceId-1);
+//
+//		Config::Set(configbuf, SsidValue(ssidName));
+//	}
 
-	Config::Set(configbuf, PointerValue(channels[mtId]));
+//	sprintf(configbuf, "/NodeList/%d/DeviceList/%d/$ns3::WifiNetDevice/Channel", mtId, deviceId);
+//
+//	Config::Set(configbuf, PointerValue(channels[mtId]));
 
 	sectorChange = true;
-
-	cout << "Actually ran SetSSID at " << Simulator::Now () << endl;
 }
 
 void
@@ -830,7 +838,7 @@ int main (int argc, char *argv[])
 	// calling the modified StaMApWifiMac
 	std::map<std::string, Ptr<MobilityModel> > apTerminalMobility;
 
-	for (int i = 0; i < wnodes; i++)
+	for (int i = 0; i < wnodes +1; i++)
 	{
 		// Temporary string containing our SSID
 		std::string ssidtmp("ap-" + boost::lexical_cast<std::string>(i));
@@ -838,11 +846,13 @@ int main (int argc, char *argv[])
 		// Push the newly created SSID into a vector
 		ssidV.push_back (Ssid (ssidtmp));
 
-		// Get the mobility model for wnode i
-		Ptr<MobilityModel> tmp = (wirelessContainer.Get (i))->GetObject<MobilityModel> ();
+		if (i < wnodes) {
+			// Get the mobility model for wnode i
+			Ptr<MobilityModel> tmp = (wirelessContainer.Get (i))->GetObject<MobilityModel> ();
 
-		// Store the information into our map
-		apTerminalMobility[ssidtmp] = tmp;
+			// Store the information into our map
+			apTerminalMobility[ssidtmp] = tmp;
+		}
 	}
 
 	NS_LOG_INFO ("------Assigning mobile terminal wireless cards------");
@@ -864,7 +874,18 @@ int main (int argc, char *argv[])
 			"Ssid", SsidValue (ssidV[0]),
 			"ActiveProbing", BooleanValue (true));
 
-	NetDeviceContainer wifiMTNetDevices = wifi.Install (yanhelpers[0], wifiMacHelper, mobileTerminalContainer);
+	std::vector<NetDeviceContainer> mobileDevices;
+
+	for (int i = 0; i < mobile; i++)
+	{
+		NetDeviceContainer wifiMTNetDevices;
+		for (int j = 0; j < wnodes; j++)
+		{
+			wifiMTNetDevices.Add (wifi.Install (yanhelpers[j], wifiMacHelper, mobileTerminalContainer.Get (i)));
+		}
+
+		mobileDevices.push_back(wifiMTNetDevices);
+	}
 
 	// Using the same calculation from the Yans-wifi-Channel, we obtain the Mobility Models for the
 	// mobile node as well as all the Wifi capable nodes
@@ -1032,15 +1053,18 @@ int main (int argc, char *argv[])
 
 	for (int i = 0; i < mobileTerminalContainer.GetN (); i++)
 	{
-		// When associating
-		sprintf(configbuf, "/NodeList/%d/DeviceList/%d/$ns3::WifiNetDevice/Mac/$ns3::StaWifiMac/Assoc", mobileTerminalContainer.Get (i)->GetId(), 0);
-		// Connect to the tracing
-		Config::ConnectWithoutContext(configbuf, MakeCallback(&apAssociation));
+		for (int j = 0; j < wnodes; j++)
+		{
+			// When associating
+			sprintf(configbuf, "/NodeList/%d/DeviceList/%d/$ns3::WifiNetDevice/Mac/$ns3::StaWifiMac/Assoc", mobileTerminalContainer.Get (i)->GetId(), j);
+			// Connect to the tracing
+			Config::ConnectWithoutContext(configbuf, MakeCallback(&apAssociation));
 
-		// When disassociating
-		sprintf(configbuf, "/NodeList/%d/DeviceList/%d/$ns3::WifiNetDevice/Mac/$ns3::StaWifiMac/DeAssoc", mobileTerminalContainer.Get (i)->GetId(), 0);
-		// Connect to the tracing
-		Config::ConnectWithoutContext(configbuf, MakeCallback(&apDeassociation));
+			// When disassociating
+			sprintf(configbuf, "/NodeList/%d/DeviceList/%d/$ns3::WifiNetDevice/Mac/$ns3::StaWifiMac/DeAssoc", mobileTerminalContainer.Get (i)->GetId(), j);
+			// Connect to the tracing
+			Config::ConnectWithoutContext(configbuf, MakeCallback(&apDeassociation));
+		}
 	}
 
 	// Schedule AP Changes
@@ -1066,8 +1090,16 @@ int main (int argc, char *argv[])
 
 
 		for (int i = 0; i < mobile && k <= 3; i++)
-			Simulator::Schedule (torun, &SetSSID, mobileNodeIds[i], 0, ssidV[k]);
+		{
+			Time ssi = torun;
+			if (k > 0)
+			{
+				ssi -= MilliSeconds(10);
+				Simulator::Schedule(torun, &SetSSID, mobileNodeIds[i], k-1, ssidV[wnodes]);
+			}
+			Simulator::Schedule (ssi, &SetSSID, mobileNodeIds[i], k, ssidV[k]);
 
+		}
 		if (smartInf) {
 			if (k == 1)
 			{
