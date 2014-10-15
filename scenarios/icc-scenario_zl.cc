@@ -463,22 +463,28 @@ apDeassociation (const Mac48Address mac)
 
 	if (sectorChange) {
 		cout << "Executing sector change!" << endl;
-//		switch (numqueue)
-//		{
-//		case 1:
-//			setupRedirection(NCcenters.Get (0), 1, now, now);
-//			setupDataRedirection(NCaps.Get (1), 1, now, now);
-//			break;
-//		case 2:
-//			setupRedirection(NCservers.Get (0), 2, now, now);
-//			setupDataRedirection(NCcenters.Get(1), 0, now, now);
-//			setupDataRedirection(NCaps.Get (2), 1, now, now);
-//			break;
-//		case 3:
-//			setupRedirection(NCcenters.Get (1), 1, now, now);
-//			setupDataRedirection(NCaps.Get (3), 1, now, now);
-//			break;
-//		}
+
+		// Code needed when using one shared channel for all Wifi
+		switch (numqueue)
+		{
+		case 1:
+			setupRedirection(NCcenters.Get (0), 1, now, now);
+			setupDataRedirection(NCaps.Get (1), 1, now, now);
+			break;
+		case 2:
+			setupRedirection(NCservers.Get (0), 2, now, now);
+			setupDataRedirection(NCcenters.Get(1), 0, now, now);
+			setupDataRedirection(NCaps.Get (2), 1, now, now);
+			break;
+		case 3:
+			setupRedirection(NCcenters.Get (1), 1, now, now);
+			setupDataRedirection(NCaps.Get (3), 1, now, now);
+			break;
+		}
+
+		/////////////////////////////////////////////////////
+
+		/////////////////////////////////////////////////////
 	}
 	cout << "Exiting apDeassociation!" << endl;
 }
@@ -619,8 +625,6 @@ int main (int argc, char *argv[])
 
 	// How many Interests/second a producer creates
 	double intFreq = (MBps * 1000000) / payLoadsize;
-
-
 
 	NS_LOG_INFO ("------Creating nodes------");
 	// Node definitions for mobile terminals (consumers)
@@ -804,27 +808,35 @@ int main (int argc, char *argv[])
 	//wifi.SetRemoteStationManager ("ns3::MinstrelWifiManager");
 	wifi.SetRemoteStationManager ("ns3::ArfWifiManager");
 
-
 	YansWifiChannelHelper wifiChannel;
 	wifiChannel.SetPropagationDelay ("ns3::ConstantSpeedPropagationDelayModel");
 	wifiChannel.AddPropagationLoss ("ns3::ThreeLogDistancePropagationLossModel");
 	wifiChannel.AddPropagationLoss("ns3::NakagamiPropagationLossModel");
 
+	/////////////////////////////////////////////////////
+
 	// All interfaces are placed on the same channel. Makes AP changes easy. Might
 	// have to be reconsidered for multiple mobile nodes
+	YansWifiPhyHelper wifiPhyHelper = YansWifiPhyHelper::Default ();
+	wifiPhyHelper.SetChannel (wifiChannel.Create());
+	wifiPhyHelper.Set("TxPowerStart", DoubleValue(16.0206));
+	wifiPhyHelper.Set("TxPowerEnd", DoubleValue(16.0206));
 
+	/////////////////////////////////////////////////////
 
-	for (int i = 0; i < wnodes; i++) {
-		YansWifiPhyHelper wifiPhyHelper = YansWifiPhyHelper::Default ();
-		uint32_t tmp = wirelessContainer.Get (0)->GetId();
-		channels[tmp] = wifiChannel.Create ();
-		wifiPhyHelper.SetChannel (channels[tmp]);
-		wifiPhyHelper.Set("TxPowerStart", DoubleValue(16.0206));
-		wifiPhyHelper.Set("TxPowerEnd", DoubleValue(16.0206));
+	// This is for the case that all Wifi cards have separate channels
+//	for (int i = 0; i < wnodes; i++) {
+//		YansWifiPhyHelper wifiPhyHelper = YansWifiPhyHelper::Default ();
+//		uint32_t tmp = wirelessContainer.Get (0)->GetId();
+//		channels[tmp] = wifiChannel.Create ();
+//		wifiPhyHelper.SetChannel (channels[tmp]);
+//		wifiPhyHelper.Set("TxPowerStart", DoubleValue(16.0206));
+//		wifiPhyHelper.Set("TxPowerEnd", DoubleValue(16.0206));
+//
+//		yanhelpers.push_back(wifiPhyHelper);
+//	}
 
-		yanhelpers.push_back(wifiPhyHelper);
-	}
-
+	/////////////////////////////////////////////////////
 
 	// Add a simple no QoS based card to the Wifi interfaces
 	NqosWifiMacHelper wifiMacHelper = NqosWifiMacHelper::Default ();
@@ -859,6 +871,7 @@ int main (int argc, char *argv[])
 
 	NS_LOG_INFO ("Assigning AP wireless cards");
 	std::vector<NetDeviceContainer> wifiAPNetDevices;
+
 	for (int i = 0; i < wnodes; i++)
 	{
 		wifiMacHelper.SetType ("ns3::ApWifiMac",
@@ -866,26 +879,46 @@ int main (int argc, char *argv[])
 						   "BeaconGeneration", BooleanValue (true),
 						   "BeaconInterval", TimeValue (Seconds (0.1)));
 
-		wifiAPNetDevices.push_back (wifi.Install (yanhelpers[i], wifiMacHelper, wirelessContainer.Get (i)));
+		/////////////////////////////////////////////////////
+
+		wifiAPNetDevices.push_back (wifi.Install (wifiPhyHelper, wifiMacHelper, wirelessContainer.Get (i)));
+
+		/////////////////////////////////////////////////////
+
+		// Used when each Wifi device has it's own channel
+//		wifiAPNetDevices.push_back (wifi.Install (yanhelpers[i], wifiMacHelper, wirelessContainer.Get (i)));
+
+		/////////////////////////////////////////////////////
 	}
 
 	// Create a Wifi station with a modified Station MAC.
 	wifiMacHelper.SetType("ns3::StaWifiMac",
-			"Ssid", SsidValue (ssidV[0]),
+			"Ssid", SsidValue (ssidV[wnodes]),
 			"ActiveProbing", BooleanValue (true));
+
 
 	std::vector<NetDeviceContainer> mobileDevices;
 
-	for (int i = 0; i < mobile; i++)
-	{
-		NetDeviceContainer wifiMTNetDevices;
-		for (int j = 0; j < wnodes; j++)
-		{
-			wifiMTNetDevices.Add (wifi.Install (yanhelpers[j], wifiMacHelper, mobileTerminalContainer.Get (i)));
-		}
+	/////////////////////////////////////////////////////
 
-		mobileDevices.push_back(wifiMTNetDevices);
-	}
+	mobileDevices.push_back(wifi.Install(wifiPhyHelper, wifiMacHelper, mobileTerminalContainer.Get (0)));
+
+	/////////////////////////////////////////////////////
+
+	// Used when each Wifi device has it's own channel
+//	for (int i = 0; i < mobile; i++)
+//	{
+//		NetDeviceContainer wifiMTNetDevices;
+//		for (int j = 0; j < wnodes; j++)
+//		{
+//			wifiMTNetDevices.Add (wifi.Install (yanhelpers[j], wifiMacHelper, mobileTerminalContainer.Get (i)));
+//		}
+//
+//		mobileDevices.push_back(wifiMTNetDevices);
+//	}
+
+	/////////////////////////////////////////////////////
+
 
 	// Using the same calculation from the Yans-wifi-Channel, we obtain the Mobility Models for the
 	// mobile node as well as all the Wifi capable nodes
@@ -1053,18 +1086,34 @@ int main (int argc, char *argv[])
 
 	for (int i = 0; i < mobileTerminalContainer.GetN (); i++)
 	{
-		for (int j = 0; j < wnodes; j++)
-		{
-			// When associating
-			sprintf(configbuf, "/NodeList/%d/DeviceList/%d/$ns3::WifiNetDevice/Mac/$ns3::StaWifiMac/Assoc", mobileTerminalContainer.Get (i)->GetId(), j);
-			// Connect to the tracing
-			Config::ConnectWithoutContext(configbuf, MakeCallback(&apAssociation));
+		/////////////////////////////////////////////////////
 
-			// When disassociating
-			sprintf(configbuf, "/NodeList/%d/DeviceList/%d/$ns3::WifiNetDevice/Mac/$ns3::StaWifiMac/DeAssoc", mobileTerminalContainer.Get (i)->GetId(), j);
-			// Connect to the tracing
-			Config::ConnectWithoutContext(configbuf, MakeCallback(&apDeassociation));
-		}
+		// When associating
+		sprintf(configbuf, "/NodeList/%d/DeviceList/%d/$ns3::WifiNetDevice/Mac/$ns3::StaWifiMac/Assoc", mobileTerminalContainer.Get (i)->GetId(), 0);
+		// Connect to the tracing
+		Config::ConnectWithoutContext(configbuf, MakeCallback(&apAssociation));
+
+		// When disassociating
+		sprintf(configbuf, "/NodeList/%d/DeviceList/%d/$ns3::WifiNetDevice/Mac/$ns3::StaWifiMac/DeAssoc", mobileTerminalContainer.Get (i)->GetId(), 0);
+		// Connect to the tracing
+		Config::ConnectWithoutContext(configbuf, MakeCallback(&apDeassociation));
+
+		/////////////////////////////////////////////////////
+
+//		for (int j = 0; j < wnodes; j++)
+//		{
+//			// When associating
+//			sprintf(configbuf, "/NodeList/%d/DeviceList/%d/$ns3::WifiNetDevice/Mac/$ns3::StaWifiMac/Assoc", mobileTerminalContainer.Get (i)->GetId(), j);
+//			// Connect to the tracing
+//			Config::ConnectWithoutContext(configbuf, MakeCallback(&apAssociation));
+//
+//			// When disassociating
+//			sprintf(configbuf, "/NodeList/%d/DeviceList/%d/$ns3::WifiNetDevice/Mac/$ns3::StaWifiMac/DeAssoc", mobileTerminalContainer.Get (i)->GetId(), j);
+//			// Connect to the tracing
+//			Config::ConnectWithoutContext(configbuf, MakeCallback(&apDeassociation));
+//		}
+
+		/////////////////////////////////////////////////////
 	}
 
 	// Schedule AP Changes
@@ -1092,12 +1141,20 @@ int main (int argc, char *argv[])
 		for (int i = 0; i < mobile && k <= 3; i++)
 		{
 			Time ssi = torun;
-			if (k > 0)
-			{
-				ssi -= MilliSeconds(10);
-				Simulator::Schedule(torun, &SetSSID, mobileNodeIds[i], k-1, ssidV[wnodes]);
-			}
-			Simulator::Schedule (ssi, &SetSSID, mobileNodeIds[i], k, ssidV[k]);
+
+			/////////////////////////////////////////////////////
+
+			/////////////////////////////////////////////////////
+//
+//			if (k > 0)
+//			{
+//				ssi -= MilliSeconds(10);
+//				Simulator::Schedule(torun, &SetSSID, mobileNodeIds[i], k-1, ssidV[wnodes]);
+//			}
+//			Simulator::Schedule (ssi, &SetSSID, mobileNodeIds[i], k, ssidV[k]);
+
+			/////////////////////////////////////////////////////
+			Simulator::Schedule (ssi, &SetSSID, mobileNodeIds[i], 0, ssidV[k]);
 
 		}
 		if (smartInf) {
