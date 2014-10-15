@@ -73,7 +73,7 @@ filename = tmpname[length(tmpname)]
 noext = gsub("\\..*", "", filename)
 
 if (opt$delay) {
-  if (opt$title) {
+  if (nchar(opt$title) > 0 ) {
     name = sprintf("%s", opt$title)
   } else {
     name = "Application Average Network Delay"
