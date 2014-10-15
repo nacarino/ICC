@@ -27,6 +27,8 @@ namespace fw {
 
 NS_OBJECT_ENSURE_REGISTERED (SmartFloodingInf);
 
+NS_LOG_COMPONENT_DEFINE ("SmartFloodingInf");
+
 TypeId
 SmartFloodingInf::GetTypeId (void)
 {
@@ -40,9 +42,10 @@ SmartFloodingInf::GetTypeId (void)
 
 SmartFloodingInf::SmartFloodingInf()
  : m_start         (0)
- //, m_stop          (0)
+ , m_rtx           (MilliSeconds(100))
  , m_redirect      (false)
  , m_data_redirect (false)
+ , m_edge          (false)
 {
 }
 
@@ -80,6 +83,7 @@ SmartFloodingInf::SatisfyPendingInterest (Ptr<Face> inFace, Ptr<const Data> data
 
 	// Check if we have the redirect turned on
 	if (m_redirect && m_start <= now /*&& now <= m_stop*/) {
+
 		// Iterator
 		std::set<Ptr<Face> >::iterator it;
 
@@ -124,19 +128,20 @@ SmartFloodingInf::OnData (Ptr<Face> inFace, Ptr<Data> data)
 
 	Time now = Simulator::Now ();
 
-	// Check if we are in the redirection time
-	if (m_data_redirect && m_start <= now /* && now <= m_stop */)
+	// Lookup PIT entry
+	Ptr<pit::Entry> pitEntry = m_pit->Lookup (*data);
+	if (pitEntry == 0)
 	{
-		// Iterator
-		std::set<Ptr<Face> >::iterator it;
 
-		Ptr<pit::Entry> pitEntry = m_pit->Lookup (*data);
-		if (pitEntry == 0)
+		if (m_data_redirect && m_start <= now)
 		{
-			// If so, there is a huge chance that the Data we have received, doesn't
-			// have a PIT entry, so we create it
+			// Add to content store
+			m_contentStore->Add (data);
 
+			// Iterator
+			std::set<Ptr<Face> >::iterator it;
 
+			// The Data we have received, doesn't have a PIT entry, so we create it
 			// Create a Nonce
 			UniformVariable m_rand = UniformVariable(0, std::numeric_limits<uint32_t>::max ());
 
@@ -147,29 +152,54 @@ SmartFloodingInf::OnData (Ptr<Face> inFace, Ptr<Data> data)
 			Ptr<Interest> interest = Create<Interest> ();
 			interest->SetNonce               (m_rand.GetValue ());
 			interest->SetName                (incoming_name);
-			interest->SetInterestLifetime    (Seconds (2));
+			interest->SetInterestLifetime    (Years (1));
 
 			// Create a newly created PIT Entry
 			pitEntry = m_pit->Create (interest);
+			if (pitEntry != 0)
+			{
+				DidCreatePitEntry (inFace, interest, pitEntry);
+			}
+
+			pitEntry->AddSeenNonce (interest->GetNonce ());
+
+			pitEntry->AddIncoming (inFace);
+
+			pitEntry->UpdateLifetime(interest->GetInterestLifetime ());
 
 			// Add all the interfaces specified by dataRedirect
-			for (it = dataRedirect.begin(); it != dataRedirect.end(); it++)
+//			for (it = dataRedirect.begin(); it != dataRedirect.end(); it++)
+//			{
+//				pitEntry->AddOutgoing((*it));
+//			}
+//
+//			for (it = dataRedirect.begin(); it != dataRedirect.end(); it++)
+//			{
+//				DidSendOutInterest(inFace, (*it), interest, pitEntry);
+//			}
+
+			// Save the information in our map and wait for further instructions
+			if (m_edge)
 			{
-				pitEntry->AddIncoming(*it);
+				retainedData curr;
+				curr.inface = inFace;
+				curr.pitEntry = pitEntry;
+				curr.data = data;
+				buffer[now] = curr;
+				return;
 			}
-		} else
-		{
-			for (it = dataRedirect.begin(); it != dataRedirect.end(); it++)
+			else
 			{
-				pitEntry->AddIncoming(*it);
+				// Do data plane performance measurements
+				WillSatisfyPendingInterest (inFace, pitEntry);
+
+				// Actually satisfy pending interest
+				SatisfyPendingInterest (inFace, data, pitEntry);
+
+				return;
 			}
 		}
-	}
 
-	// Lookup PIT entry
-	Ptr<pit::Entry> pitEntry = m_pit->Lookup (*data);
-	if (pitEntry == 0)
-	{
 		bool cached = false;
 
 		if (m_cacheUnsolicitedData || (m_cacheUnsolicitedDataFromApps && (inFace->GetFlags () & Face::APPLICATION)))
@@ -206,6 +236,79 @@ SmartFloodingInf::OnData (Ptr<Face> inFace, Ptr<Data> data)
 		// Lookup another PIT entry
 		pitEntry = m_pit->Lookup (*data);
 	}
+}
+
+void
+SmartFloodingInf::WillEraseTimedOutPendingInterest (Ptr<pit::Entry> pitEntry)
+{
+	NS_LOG_DEBUG ("WillEraseTimedOutPendingInterest for " << pitEntry->GetPrefix ());
+
+	if (pitEntry != 0) {
+		for (pit::Entry::out_container::iterator face = pitEntry->GetOutgoing ().begin ();
+				face != pitEntry->GetOutgoing ().end ();
+				face ++)
+		{
+			// NS_LOG_DEBUG ("Face: " << face->m_face);
+			pitEntry->GetFibEntry ()->UpdateStatus (face->m_face, fib::FaceMetric::NDN_FIB_YELLOW);
+		}
+
+		super::WillEraseTimedOutPendingInterest (pitEntry);
+	}
+}
+
+void
+SmartFloodingInf::WillSatisfyPendingInterest (Ptr<Face> inFace, Ptr<pit::Entry> pitEntry)
+{
+	if (inFace != 0)
+	{
+		// Update metric status for the incoming interface in the corresponding FIB entry
+		pitEntry->GetFibEntry ()->UpdateStatus (inFace, fib::FaceMetric::NDN_FIB_GREEN);
+	}
+
+	if (pitEntry != 0)
+	{
+		pit::Entry::out_iterator out = pitEntry->GetOutgoing ().find (inFace);
+
+		// If we have sent interest for this data via this face, then update stats.
+		if (out != pitEntry->GetOutgoing ().end ())
+		{
+			pitEntry->GetFibEntry ()->UpdateFaceRtt (inFace, Simulator::Now () - out->m_sendTime);
+		}
+	}
+
+	m_satisfiedInterests (pitEntry);
+}
+
+void
+SmartFloodingInf::flushBuffer () {
+
+	// Get our current time
+	Time now = Simulator::Now ();
+
+	std::map<Time, retainedData>::iterator ii;
+
+	std::cout << "Buffer of " << buffer.size () << " at " << now << std::endl;
+
+	int total = 0;
+
+	// Go through the buffer we have
+	for (ii = buffer.begin(); ii != buffer.end(); ++ii)
+	{
+		// If the time we saw the packet is lower than the Rtx time, send
+		//if (now - (*ii).first < m_rtx) {
+			// Do data plane performance measurements
+			WillSatisfyPendingInterest ((*ii).second.inface, (*ii).second.pitEntry);
+
+			SatisfyPendingInterest((*ii).second.inface, (*ii).second.data, (*ii).second.pitEntry);
+
+			total++;
+		//}
+	}
+
+	std::cout << "Transmitted " << total << std::endl;
+
+	// With everything launched, we clear the buffer
+	buffer.clear ();
 }
 
 } /* namespace fw */

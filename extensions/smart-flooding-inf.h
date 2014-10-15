@@ -33,6 +33,7 @@
 #include <ns3-dev/ns3/assert.h>
 #include <ns3-dev/ns3/boolean.h>
 #include <ns3-dev/ns3/log.h>
+#include <ns3-dev/ns3/nstime.h>
 #include <ns3-dev/ns3/random-variable.h>
 #include <ns3-dev/ns3/simulator.h>
 
@@ -45,6 +46,12 @@ namespace ll = boost::lambda;
 namespace ns3 {
 namespace ndn {
 namespace fw {
+
+typedef struct {
+	Ptr<Face> inface;
+	Ptr<Data> data;
+	Ptr<pit::Entry> pitEntry;
+} retainedData;
 
 class SmartFloodingInf : public SmartFlooding {
 public:
@@ -63,13 +70,27 @@ public:
 	OnData (Ptr<Face> face,
 			Ptr<Data> data);
 
+	virtual void
+	WillEraseTimedOutPendingInterest (Ptr<pit::Entry> pitEntry);
+
+	virtual void
+	WillSatisfyPendingInterest (Ptr<Face> inFace, Ptr<pit::Entry> pitEntry);
+
+	void
+	flushBuffer ();
+
 	Time m_start;
-	//Time m_stop;
+	Time m_rtx;
 	bool m_redirect;
 	bool m_data_redirect;
+	bool m_edge;
 
 	std::set<Ptr<Face> > redirectFaces;
 	std::set<Ptr<Face> > dataRedirect;
+	std::map<Time, retainedData> buffer;
+
+private:
+  typedef GreenYellowRed super;
 
 };
 
