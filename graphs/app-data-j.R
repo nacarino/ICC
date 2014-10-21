@@ -49,6 +49,7 @@ data$Node = factor (data$Node)
 data$Type = factor (data$Type)
 
 data$TimeSec = 1 * ceiling (data$Time)
+data$DelayM = data$DelayS * 1000
 
 # exclude irrelevant types - CCN
 data = subset (data, Type %in% c("FullDelay"))
@@ -72,14 +73,18 @@ filename = tmpname[length(tmpname)]
 noext = gsub("\\..*", "", filename)
 
 if (opt$delay) {
-  name = sprintf("%s Average Network Delay", opt$title)
+  if (nchar(opt$title) > 0 ) {
+    name = sprintf("%s", opt$title)
+  } else {
+    name = "Application Average Network Delay"
+  } 
   
   data.combined = summaryBy (. ~ TimeSec + Type, data=data, FUN=mean)
   g.all <- ggplot (data.combined, aes(colour=Legend)) +
-    geom_line (aes (x=TimeSec, y=DelayS.mean, colour="Avg Delay"), size=1) +
+    geom_line (aes (x=TimeSec, y=DelayM.mean, colour="Avg Delay"), size=1) +
     ggtitle (name) +
-    ylab ("Delay [Seconds]") +
-    xlab ("Time")
+    ylab ("Delay [Milliseconds]") +
+    xlab ("Simulation Time [Seconds]")
   
   outpng = sprintf("%s/%s-app-delay.png", opt$output, noext)
   
