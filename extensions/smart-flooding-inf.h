@@ -77,7 +77,7 @@ namespace ns3 {
 	WillSatisfyPendingInterest (Ptr<Face> inFace, Ptr<pit::Entry> pitEntry);
 
 	void
-	flushBuffer ();
+	flushBuffer (Ptr<Face> face);
 
 	uint32_t
 	bufferSize();
@@ -87,6 +87,7 @@ namespace ns3 {
 	bool m_redirect;
 	bool m_data_redirect;
 	bool m_edge;
+	bool m_passthrough;
 
 	std::set<Ptr<Face> > redirectFaces;
 	std::set<Ptr<Face> > dataRedirect;

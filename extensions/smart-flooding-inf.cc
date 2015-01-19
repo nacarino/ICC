@@ -144,13 +144,54 @@ SmartFloodingInf::OnData (Ptr<Face> inFace, Ptr<Data> data)
 	  // Save the information in our map and wait for further instructions
 	  if (m_edge)
 	    {
-	      for (it = dataRedirect.begin(); it != dataRedirect.end(); it++)
+	      if (m_passthrough)
 		{
-		  superData curr;
-		  curr.inface = inFace;
-		  curr.outface = (*it);
-		  curr.data = data;
-		  buffer[now] = curr;
+		  for (it = dataRedirect.begin(); it != dataRedirect.end(); it++)
+		    {
+		      Ptr<Face> touse = (*it);
+		      // The Data we have received, doesn't have a PIT entry, so we create it
+		      // Create a Nonce
+		      UniformVariable m_rand = UniformVariable(0, std::numeric_limits<uint32_t>::max ());
+
+		      // Obtain the name from the Data packet
+		      Ptr<ndn::Name> incoming_name = Create<ndn::Name> (data->GetName());
+
+		      // Create the Interest packet using the information we have
+		      Ptr<Interest> interest = Create<Interest> ();
+		      interest->SetNonce               (m_rand.GetValue ());
+		      interest->SetName                (incoming_name);
+		      interest->SetInterestLifetime    (Years (1));
+
+		      // Create a newly created PIT Entry
+		      pitEntry = m_pit->Create (interest);
+		      if (pitEntry != 0)
+			{
+			  DidCreatePitEntry (touse, interest, pitEntry);
+			}
+
+		      pitEntry->AddSeenNonce (interest->GetNonce ());
+
+		      pitEntry->AddIncoming(touse);
+
+		      pitEntry->UpdateLifetime(interest->GetInterestLifetime ());
+
+		      // Do data plane performance measurements
+		      WillSatisfyPendingInterest (inFace, pitEntry);
+
+		      // Actually satisfy pending interest
+		      SatisfyPendingInterest (inFace, data, pitEntry);
+		    }
+		}
+	      else
+		{
+		  for (it = dataRedirect.begin(); it != dataRedirect.end(); it++)
+		    {
+		      superData curr;
+		      curr.inface = inFace;
+		      curr.outface = (*it);
+		      curr.data = data;
+		      buffer[now] = curr;
+		    }
 		}
 	      return;
 	    }
@@ -268,66 +309,83 @@ SmartFloodingInf::WillSatisfyPendingInterest (Ptr<Face> inFace, Ptr<pit::Entry> 
 }
 
 void
-SmartFloodingInf::flushBuffer () {
+SmartFloodingInf::flushBuffer (Ptr<Face> face) {
 
   // Get our current time
   Time now = Simulator::Now ();
 
   std::map<Time, superData>::iterator ij;
 
+  std::string lastname;
+
   int total = 0;
 
   std::cout << "Historical buffer of " << buffer.size () << " at " << now << std::endl;
-  std::cout << "Flushing from " << m_start -m_rtx << std::endl;
+  std::cout << "Flushing from " << m_start +m_rtx << std::endl;
 
-  for (ij = buffer.lower_bound(m_start -m_rtx) ; ij != buffer.end(); ++ij)
+  for (ij = buffer.lower_bound(m_start + m_rtx) ; ij != buffer.end(); ++ij)
     {
-      // The Data we have received, doesn't have a PIT entry, so we create it
-      // Create a Nonce
-      UniformVariable m_rand = UniformVariable(0, std::numeric_limits<uint32_t>::max ());
 
-      // Obtain the name from the Data packet
-      Ptr<ndn::Name> incoming_name = Create<ndn::Name> ((*ij).second.data->GetName());
-
-      // Create the Interest packet using the information we have
-      Ptr<Interest> interest = Create<Interest> ();
-      interest->SetNonce               (m_rand.GetValue ());
-      interest->SetName                (incoming_name);
-      interest->SetInterestLifetime    (Years (1));
-
-      // Create a newly created PIT Entry
-      Ptr<pit::Entry> pitEntry = m_pit->Create (interest);
+      Ptr<pit::Entry> pitEntry = m_pit->Lookup (*(*ij).second.data);
       if (pitEntry != 0)
 	{
-	  DidCreatePitEntry ((*ij).second.inface, interest, pitEntry);
-	}
-
-      pitEntry->AddSeenNonce (interest->GetNonce ());
-
-      Ptr<Face> touse = (*ij).second.outface;
-      if (touse == 0)
-	{
-	  // Iterator
-	  std::set<Ptr<Face> >::iterator it;
-	  for (it = dataRedirect.begin(); it != dataRedirect.end(); it++)
-	    {
-	      pitEntry->AddIncoming ((*it));
-	    }
+	  std::cout << "I have a PIT entry for this, why?" << std::endl;
 	}
       else
 	{
-	  pitEntry->AddIncoming (touse);
+	  std::cout << "No PIT, must create" << std::endl;
+	  // Create a Nonce
+	  UniformVariable m_rand = UniformVariable(0, std::numeric_limits<uint32_t>::max ());
+
+	  // Obtain the name from the Data packet
+	  Ptr<ndn::Name> incoming_name = Create<ndn::Name> ((*ij).second.data->GetName());
+
+//	  // Create the Interest packet using the information we have
+//	  Ptr<Interest> interest = Create<Interest> ();
+//	  interest->SetNonce               (m_rand.GetValue ());
+//	  interest->SetName                (incoming_name);
+//	  interest->SetInterestLifetime    (Years (1));
+//
+//	  Create a newly created PIT Entry
+//	  Ptr<pit::Entry> pitEntry = m_pit->Create (interest);
+//	  if (pitEntry != 0)
+//	    {
+//	      DidCreatePitEntry ((*ij).second.inface, interest, pitEntry);
+//	    }
+	  //
+	  //      pitEntry->AddSeenNonce (interest->GetNonce ());
+	  lastname = incoming_name->toUri();
+
+//	  Ptr<Face> touse = (*ij).second.outface;
+//	  if (touse == 0)
+//	    {
+//	      // Iterator
+//	      std::set<Ptr<Face> >::iterator it;
+//	      for (it = dataRedirect.begin(); it != dataRedirect.end(); it++)
+//		{
+//		  //pitEntry->AddIncoming ((*it));
+//		  (*it)->SendData((*ij).second.data);
+//		  std::cout << "Sent out " << lastname << " through face " << (*it) << std::endl;
+//		}
+//	    }
+//	  else
+//	    {
+	      //pitEntry->AddIncoming (touse);
+	      face->SendData((*ij).second.data);
+	      std::cout << "Information present Sent out " << lastname << " through face " << face->GetId() << std::endl;
+//	    }
+
+//	  pitEntry->UpdateLifetime(interest->GetInterestLifetime ());
+//
+//	  WillSatisfyPendingInterest ((*ij).second.inface, pitEntry);
+//	  SatisfyPendingInterest((*ij).second.inface, (*ij).second.data, pitEntry);
+
+	  total++;
 	}
-
-      pitEntry->UpdateLifetime(interest->GetInterestLifetime ());
-
-      WillSatisfyPendingInterest ((*ij).second.inface, pitEntry);
-      SatisfyPendingInterest((*ij).second.inface, (*ij).second.data, pitEntry);
-
-      total++;
     }
 
   std::cout << "Transmitted " << total << std::endl;
+  std::cout << "Last name transmitted " << lastname << std::endl;
 }
 
 uint32_t

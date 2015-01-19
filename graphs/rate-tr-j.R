@@ -74,7 +74,11 @@ if (nchar(opt$node) > 0) {
     quit("yes")
   }
   
-  intname = sprintf("%s Interest Data rate for Nodes %s", opt$title, opt$node)
+  if (nchar(opt$title) > 0 ) {
+    intname = sprintf("%s", opt$title)
+  } else {
+    intname = sprintf("Interest Data rate for Nodes %s", opt$node)
+  } 
   
   intdata.combined = summaryBy (. ~ Time + Node + Type, data=intdata, FUN=sum)
   
@@ -87,7 +91,11 @@ if (nchar(opt$node) > 0) {
     xlab ("Simulation time (Seconds)") +
     facet_wrap (~ Node)
 } else {
-  intname = sprintf("%s Interest Data rate", opt$title)
+  if (nchar(opt$title) > 0 ) {
+    intname = sprintf("%s", opt$title)
+  } else {
+    intname = sprintf("Interest Data rate for Nodes %s", opt$node)
+  } 
   
   intdata.combined = summaryBy (. ~ Time + Type, data=intdata, FUN=sum)
   

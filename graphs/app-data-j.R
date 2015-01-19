@@ -94,7 +94,11 @@ if (opt$delay) {
 }
 
 if (opt$hop) {
-  name = sprintf("%s Average Packet Hop Count", opt$title)
+  if (nchar(opt$title) > 0 ) {
+    name = sprintf("%s", opt$title)
+  } else {
+    name = "Application Average Hop Count"
+  } 
   
   data.combined = summaryBy (. ~ TimeSec + Type, data=data, FUN=mean)
   

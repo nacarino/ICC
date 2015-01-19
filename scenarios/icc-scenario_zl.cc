@@ -194,64 +194,6 @@ SetSSID (uint32_t mtId, uint32_t deviceId, Ssid ssidName)
   cout << "||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||" << endl;
 }
 
-void
-PeriodicPitPrinter (Ptr<Node> node)
-{
-  Ptr<ndn::Pit> pit = node->GetObject<ndn::Pit> ();
-
-  cout << "Node: " << node->GetId () << endl; // test which node to get PIT Information
-
-  for (Ptr<ndn::pit::Entry> entry = pit->Begin (); entry != pit->End (); entry = pit->Next (entry))
-    {
-      ndn::pit::Entry::in_container incoming = entry->GetIncoming (); //IncomingFace
-      ndn::pit::Entry::out_container outgoing = entry->GetOutgoing (); //OutcomingFace
-
-      cout << "In: ";
-      bool first = true;
-      BOOST_FOREACH (const ndn::pit::IncomingFace &face, incoming)
-      {
-	if (!first)
-	  cout << ",";
-	else
-	  first = false;
-
-	cout << *face.m_face; //Get Face
-      }
-
-      cout << "\nOut: ";
-      first = true;
-      BOOST_FOREACH (const ndn::pit::OutgoingFace &face, outgoing)
-      {
-	if (!first)
-	  cout << ",";
-	else
-	  first = false;
-
-	cout << *face.m_face;
-      }
-
-      vector<Name> nameprefix;
-
-      for (Ptr<ndn::pit::Entry> entry = pit->Begin (); entry != pit->End (); entry = pit->Next (entry))
-	{
-	  nameprefix.push_back (entry->GetPrefix());
-	}
-      for (int i=0; i<nameprefix.size();i++){
-	  cout << nameprefix[i] << endl;
-      }
-      //		cout << entry->GetPrefix () << "\t" << entry->GetExpireTime () << endl; // Get name prefix of PIT entry
-
-      vector<Ptr<const Interest> > previousinterests;
-      for (Ptr<ndn::pit::Entry> entry = pit->Begin (); entry != pit->End (); entry = pit->Next (entry))
-	{
-	  previousinterests.push_back (entry->GetInterest());
-	}
-      for (int i=0; i<previousinterests.size();i++){
-	  cout << previousinterests[i] << endl;
-      }
-    }
-}
-
 /**
  * \brief NDN to act as if a NNN INF packet was received
  * \param n_node The node you wish to manipulate
@@ -380,6 +322,24 @@ turnoffRedirection (Ptr<Node> n_node)
   cout << "------------------------------------------------------------" << endl;
 }
 
+void
+setPassthrough (Ptr<Node> n_node)
+{
+  cout << "------------------------------------------------------------" << endl;
+  cout << "Setting pass through for " << n_node->GetId () <<  " at " << Simulator::Now () << endl;
+  Ptr<fw::SmartFloodingInf> stra = n_node->GetObject <fw::SmartFloodingInf> ();
+  stra->m_passthrough = true;
+}
+
+void
+turnOffPassthrough (Ptr<Node> n_node)
+{
+  cout << "------------------------------------------------------------" << endl;
+  cout << "Turn off pass through for " << n_node->GetId () <<  " at " << Simulator::Now () << endl;
+  Ptr<fw::SmartFloodingInf> stra = n_node->GetObject <fw::SmartFloodingInf> ();
+  stra->m_passthrough = false;
+}
+
 Ptr<Node>
 GetAssociatedNode (NodeContainer nc, Mac48Address mac)
 {
@@ -409,11 +369,11 @@ GetAssociatedNode (NodeContainer nc, Mac48Address mac)
 }
 
 void
-flushNodeBuffer (Ptr<Node> n_node)
+flushNodeBuffer (Ptr<Node> n_node, Ptr<Face> face)
 {
   cout << "Flushing buffer of node " << n_node->GetId() << endl;
   Ptr<fw::SmartFloodingInf> stra = n_node->GetObject <fw::SmartFloodingInf> ();
-  stra->flushBuffer();
+  stra->flushBuffer(face);
 }
 
 uint32_t
@@ -434,37 +394,65 @@ firstAssociatedPacket(Ptr<Node> tmp)
       {
 	case 1:
 
-	  turnoffRedirection(NCcenters.Get (0));
-	  turnoffDataRedirection(NCcenters.Get (0));
-	  flushNodeBuffer(NCcenters.Get (0));
+	  setPassthrough(tmp);
 
-	  tmp = numToNode[1];
 	  turnoffDataRedirection(tmp);
-	  flushNodeBuffer(tmp);
+
+	  turnOffPassthrough(tmp);
+
+	  turnoffRedirection(NCcenters.Get (0));
+
+	  //turnoffRedirection(NCcenters.Get (0));
+	  //turnoffDataRedirection(NCcenters.Get (0));
+	  //flushNodeBuffer(NCcenters.Get (0));
+
+	  //tmp = numToNode[1];
+	  //turnoffDataRedirection(tmp);
+	  //flushNodeBuffer(tmp);
 
 	  break;
 	case 2:
+	  setPassthrough(NCaps.Get (2));
+	  setPassthrough(NCcenters.Get(1));
+
+	  turnoffDataRedirection(NCaps.Get (2));
+	  turnoffDataRedirection(NCaps.Get (1));
+
+	  turnOffPassthrough(NCaps.Get (2));
+	  turnOffPassthrough(NCcenters.Get(1));
+
 	  turnoffRedirection(NCservers.Get (0));
-	  turnoffDataRedirection(NCservers.Get (0));
-	  flushNodeBuffer(NCservers.Get (0));
 
-	  tmp = NCcenters.Get (1);
-	  turnoffDataRedirection(tmp);
-	  flushNodeBuffer(tmp);
-
-	  tmp = numToNode[2];
-	  turnoffDataRedirection(tmp);
-	  flushNodeBuffer(tmp);
+//	  turnoffRedirection(NCservers.Get (0));
+//	  turnoffDataRedirection(NCservers.Get (0));
+//	  //flushNodeBuffer(NCservers.Get (0));
+//
+//	  tmp = NCcenters.Get (1);
+//	  turnoffDataRedirection(tmp);
+//	  //flushNodeBuffer(tmp);
+//
+//	  tmp = numToNode[2];
+//	  turnoffDataRedirection(tmp);
+	  //flushNodeBuffer(tmp);
 
 	  break;
 	case 3:
-	  tmp = NCcenters.Get (1);
-	  turnoffDataRedirection(tmp);
-	  flushNodeBuffer(tmp);
 
-	  tmp = numToNode[3];
+	  setPassthrough(tmp);
+
 	  turnoffDataRedirection(tmp);
-	  flushNodeBuffer(tmp);
+
+	  turnOffPassthrough(tmp);
+
+	  turnoffRedirection(NCcenters.Get (1));
+
+	  //tmp = NCcenters.Get (1);
+	  //turnoffDataRedirection(tmp);
+	  //flushNodeBuffer(tmp);
+
+	  //tmp = numToNode[3];
+	  //turnoffDataRedirection(tmp);
+	  //flushNodeBuffer(tmp);
 	  break;
       }
       readEntry = false;
@@ -554,10 +542,16 @@ apDeassociation (const Mac48Address mac)
 void SetSSIDviaDistance(uint32_t mtId, Ptr<MobilityModel> node, std::map<std::string, Ptr<MobilityModel> > aps, bool smartInf)
 {
   char configbuf[250];
+  char configbuf2[250];
   char buffer[250];
 
   // This causes the device in mtId to change the SSID, forcing AP change
   sprintf(configbuf, "/NodeList/%d/DeviceList/0/$ns3::WifiNetDevice/Mac/Ssid", mtId);
+
+//  if (smartInf)
+//    {
+//      sprintf(configbuf2, "/NodeList/%d/DeviceList/0/$ns3::WifiNetDevice/Mac/Ssid", 1);
+//    }
 
   std::map<double, std::string> SsidDistance;
 
@@ -593,7 +587,7 @@ void SetSSIDviaDistance(uint32_t mtId, Ptr<MobilityModel> node, std::map<std::st
 		{
 		  // Central node
 		  setupRedirection(NCcenters.Get (0), 1, Simulator::Now());
-		  setupDataRedirection(NCcenters.Get (0), 1, Simulator::Now());
+		  //setupDataRedirection(NCcenters.Get (0), 1, Simulator::Now());
 
 		  // AP node
 		  setupDataRedirection(NCaps.Get (1), 1, Simulator::Now());
@@ -604,7 +598,7 @@ void SetSSIDviaDistance(uint32_t mtId, Ptr<MobilityModel> node, std::map<std::st
 		  // Schedule changes
 		  // Server
 		  setupRedirection(NCservers.Get (0), 1, Simulator::Now());
-		  setupDataRedirection(NCservers.Get (0), 1, Simulator::Now());
+		  //setupDataRedirection(NCservers.Get (0), 1, Simulator::Now());
 
 		  // Central node
 		  setupDataRedirection(NCcenters.Get (1), 0, Simulator::Now());
@@ -617,7 +611,7 @@ void SetSSIDviaDistance(uint32_t mtId, Ptr<MobilityModel> node, std::map<std::st
 		{
 		  // Central node
 		  setupRedirection(NCcenters.Get (1), 1, Simulator::Now());
-		  setupDataRedirection(NCcenters.Get (1), 1, Simulator::Now());
+		  //setupDataRedirection(NCcenters.Get (1), 1, Simulator::Now());
 
 		  // Ap node
 		  setupDataRedirection(NCaps.Get (3), 1, Simulator::Now());
@@ -633,6 +627,11 @@ void SetSSIDviaDistance(uint32_t mtId, Ptr<MobilityModel> node, std::map<std::st
 
   // Because the map sorts by std:less, the first position has the lowest distance
   Config::Set(configbuf, SsidValue(ssid));
+
+//  if (smartInf)
+//    {
+//      Config::Set(configbuf2, SsidValue(ssid));
+//    }
 
   // Empty the maps
   SsidDistance.clear();
@@ -935,6 +934,16 @@ int main (int argc, char *argv[])
   Ns2MobilityHelper ns2 = Ns2MobilityHelper (nsTFile);
   ns2.Install ();
 
+//  MobilityHelper mobile2;
+//  Ptr<ListPositionAllocator> initialMobile2 = CreateObject<ListPositionAllocator> ();
+//
+//  Vector posMobile2 (150, 0, 0.0);
+//  initialMobile2->Add (posMobile2);
+//
+//  mobile2.SetPositionAllocator(initialMobile2);
+//  mobile2.SetMobilityModel ("ns3::ConstantPositionMobilityModel");
+//  mobile2.Install(mobileTerminalContainer.Get (1));
+
   // Connect Wireless Nodes to central nodes
   // Because the simulation is using Wifi, PtP connections are 100Mbps
   // with 5ms delay
@@ -965,7 +974,6 @@ int main (int argc, char *argv[])
 
   }
 
-
   NS_LOG_INFO ("------Creating Wireless cards------");
 
   // Use the Wifi Helper to define the wireless interfaces for APs
@@ -995,22 +1003,6 @@ int main (int argc, char *argv[])
   wifiPhyHelper.SetChannel (wifiChannel.Create());
   wifiPhyHelper.Set("TxPowerStart", DoubleValue(16.0206));
   wifiPhyHelper.Set("TxPowerEnd", DoubleValue(16.0206));
-
-  /////////////////////////////////////////////////////
-
-  // This is for the case that all Wifi cards have separate channels
-  //	for (int i = 0; i < wnodes; i++) {
-  //		YansWifiPhyHelper wifiPhyHelper = YansWifiPhyHelper::Default ();
-  //		uint32_t tmp = wirelessContainer.Get (0)->GetId();
-  //		channels[tmp] = wifiChannel.Create ();
-  //		wifiPhyHelper.SetChannel (channels[tmp]);
-  //		wifiPhyHelper.Set("TxPowerStart", DoubleValue(16.0206));
-  //		wifiPhyHelper.Set("TxPowerEnd", DoubleValue(16.0206));
-  //
-  //		yanhelpers.push_back(wifiPhyHelper);
-  //	}
-
-  /////////////////////////////////////////////////////
 
   // Add a simple no QoS based card to the Wifi interfaces
   NqosWifiMacHelper wifiMacHelper = NqosWifiMacHelper::Default ();
@@ -1060,13 +1052,6 @@ int main (int argc, char *argv[])
       /////////////////////////////////////////////////////
 
       wifiAPNetDevices.push_back (wifi.Install (wifiPhyHelper, wifiMacHelper, wirelessContainer.Get (i)));
-
-      /////////////////////////////////////////////////////
-
-      // Used when each Wifi device has it's own channel
-      //		wifiAPNetDevices.push_back (wifi.Install (yanhelpers[i], wifiMacHelper, wirelessContainer.Get (i)));
-
-      /////////////////////////////////////////////////////
     }
 
   // Create a Wifi station with a modified Station MAC.
@@ -1081,22 +1066,7 @@ int main (int argc, char *argv[])
 
   mobileDevices.push_back(wifi.Install(wifiPhyHelper, wifiMacHelper, mobileTerminalContainer.Get (0)));
 
-  /////////////////////////////////////////////////////
-
-  // Used when each Wifi device has it's own channel
-  //	for (int i = 0; i < mobile; i++)
-  //	{
-  //		NetDeviceContainer wifiMTNetDevices;
-  //		for (int j = 0; j < wnodes; j++)
-  //		{
-  //			wifiMTNetDevices.Add (wifi.Install (yanhelpers[j], wifiMacHelper, mobileTerminalContainer.Get (i)));
-  //		}
-  //
-  //		mobileDevices.push_back(wifiMTNetDevices);
-  //	}
-
-  /////////////////////////////////////////////////////
-
+  //mobileDevices.push_back(wifi.Install(wifiPhyHelper, wifiMacHelper, mobileTerminalContainer.Get (1)));
 
   // Using the same calculation from the Yans-wifi-Channel, we obtain the Mobility Models for the
   // mobile node as well as all the Wifi capable nodes
@@ -1158,7 +1128,7 @@ int main (int argc, char *argv[])
       for (int i = 0; i < allNdnNodes.GetN (); i++)
 	{
 	  Ptr<fw::SmartFloodingInf> stra = allNdnNodes.Get(i)->GetObject <fw::SmartFloodingInf> ();
-	  stra->m_rtx = Seconds(4*retxtime);
+	  stra->m_rtx = Seconds(retxtime);
 	}
     }
 
@@ -1197,7 +1167,7 @@ int main (int argc, char *argv[])
   consumerHelper.SetPrefix ("/waseda/sato");
   consumerHelper.SetAttribute ("Frequency", DoubleValue (intFreq));
   consumerHelper.SetAttribute ("StartTime", TimeValue (Seconds(1)));
-  consumerHelper.SetAttribute ("StopTime", TimeValue (Seconds (endTime)));
+  consumerHelper.SetAttribute ("StopTime", TimeValue (Seconds (endTime+5)));
   consumerHelper.SetAttribute ("RetxTimer", TimeValue (Seconds(retxtime)));
   if (maxSeq > 0)
     consumerHelper.SetAttribute ("MaxSeq", IntegerValue(maxSeq));
@@ -1207,6 +1177,8 @@ int main (int argc, char *argv[])
 
   sprintf(buffer, "Ending time! %f", endTime+5);
   NS_LOG_INFO(buffer);
+
+
 
   // If the variable is set, print the trace files
   if (traceFiles) {
@@ -1251,17 +1223,19 @@ int main (int argc, char *argv[])
 
       NS_LOG_INFO ("Installing tracers");
 
+      int text = retxtime*1000;
+
       // NDN Aggregate tracer
       printf ("now I'm writing the files at %s/%s/%s/%.0f/\n", results, scenario, mode, speed);
-      sprintf (filename, "%s/%s/%s/%.0f/aggregate-trace-%s", results, scenario, mode, speed, routeType);
+      sprintf (filename, "%s/%s/%s/%.0f/aggregate-trace-%s-%d", results, scenario, mode, speed, routeType, text);
       ndn::L3AggregateTracer::InstallAll(filename, Seconds (1.0));
 
       // NDN L3 tracer
-      sprintf (filename, "%s/%s/%s/%.0f/rate-trace-%s", results, scenario, mode, speed, routeType);
+      sprintf (filename, "%s/%s/%s/%.0f/rate-trace-%s-%d", results, scenario, mode, speed, routeType, text);
       ndn::L3RateTracer::InstallAll (filename, Seconds (1.0));
 
       // NDN App Tracer
-      sprintf (filename, "%s/%s/%s/%.0f/app-delays-%s", results, scenario, mode, speed, routeType);
+      sprintf (filename, "%s/%s/%s/%.0f/app-delays-%s-%d", results, scenario, mode, speed, routeType, text);
       ndn::AppDelayTracer::InstallAll (filename);
 
       // L2 Drop rate tracer
@@ -1276,15 +1250,12 @@ int main (int argc, char *argv[])
   // Get the Consumer application
   Ptr<PriConsumer> consumer = DynamicCast<PriConsumer> (mobileTerminalContainer.Get (0)->GetApplication(0));
 
-  //consumer = mobileTerminalContainer.Get (0)->GetObject <ConsumerCbr> ();
-
   NS_LOG_INFO ("------Scheduling events - SSID changes------");
 
   char configbuf[250];
 
   for (int i = 0; i < mobileTerminalContainer.GetN (); i++)
     {
-      /////////////////////////////////////////////////////
 
       if (smartInf)
 	{
@@ -1298,22 +1269,6 @@ int main (int argc, char *argv[])
 	  // Connect to the tracing
 	  Config::ConnectWithoutContext(configbuf, MakeCallback(&apDeassociation));
 	}
-      /////////////////////////////////////////////////////
-
-      //		for (int j = 0; j < wnodes; j++)
-      //		{
-      //			// When associating
-      //			sprintf(configbuf, "/NodeList/%d/DeviceList/%d/$ns3::WifiNetDevice/Mac/$ns3::StaWifiMac/Assoc", mobileTerminalContainer.Get (i)->GetId(), j);
-      //			// Connect to the tracing
-      //			Config::ConnectWithoutContext(configbuf, MakeCallback(&apAssociation));
-      //
-      //			// When disassociating
-      //			sprintf(configbuf, "/NodeList/%d/DeviceList/%d/$ns3::WifiNetDevice/Mac/$ns3::StaWifiMac/DeAssoc", mobileTerminalContainer.Get (i)->GetId(), j);
-      //			// Connect to the tracing
-      //			Config::ConnectWithoutContext(configbuf, MakeCallback(&apDeassociation));
-      //		}
-
-      /////////////////////////////////////////////////////
     }
 
   // Schedule AP Changes
@@ -1325,12 +1280,16 @@ int main (int argc, char *argv[])
   double timeTime = 5;
   double tmpT = 0;
 
+  // Stop the application from generating more things without actually dying
+  Simulator::Schedule(Seconds(endTime), &Config::Set, "/NodeList/"+boost::lexical_cast<string> (mobileTerminalContainer.Get (0)->GetId())+"/ApplicationList/*/$ns3::ndn::ConsumerCbr/Frequency",
+               DoubleValue(0.1));
+
   double j = apsec;
   int k = 0;
 
   while ( j < endTime)
     {
-      for (int i = 0; i < mobile; i++)
+      for (int i = 0; i < 1; i++)
 	{
 	  sprintf(buffer, "Running event SSID distance event at %f for node ", j);
 	  NS_LOG_INFO(buffer);
