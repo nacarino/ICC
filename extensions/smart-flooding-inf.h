@@ -44,17 +44,17 @@
 namespace ll = boost::lambda;
 
 namespace ns3 {
-namespace ndn {
-namespace fw {
+  namespace ndn {
+    namespace fw {
 
-typedef struct {
+      typedef struct {
 	Ptr<Face> inface;
+	Ptr<Face> outface;
 	Ptr<Data> data;
-	Ptr<pit::Entry> pitEntry;
-} retainedData;
+      } superData;
 
-class SmartFloodingInf : public SmartFlooding {
-public:
+      class SmartFloodingInf : public SmartFlooding {
+      public:
 	static TypeId
 	GetTypeId ();
 
@@ -63,12 +63,12 @@ public:
 
 	virtual void
 	SatisfyPendingInterest (Ptr<Face> inFace, // 0 allowed (from cache)
-			 Ptr<const Data> data,
-			 Ptr<pit::Entry> pitEntry);
+				Ptr<const Data> data,
+				Ptr<pit::Entry> pitEntry);
 
 	virtual void
 	OnData (Ptr<Face> face,
-			Ptr<Data> data);
+		Ptr<Data> data);
 
 	virtual void
 	WillEraseTimedOutPendingInterest (Ptr<pit::Entry> pitEntry);
@@ -79,6 +79,9 @@ public:
 	void
 	flushBuffer ();
 
+	uint32_t
+	bufferSize();
+
 	Time m_start;
 	Time m_rtx;
 	bool m_redirect;
@@ -87,15 +90,15 @@ public:
 
 	std::set<Ptr<Face> > redirectFaces;
 	std::set<Ptr<Face> > dataRedirect;
-	std::map<Time, retainedData> buffer;
+	std::map<Time, superData> buffer;
 
-private:
-  typedef GreenYellowRed super;
+      private:
+	typedef GreenYellowRed super;
 
-};
+      };
 
-} /* namespace fw */
-} /* namespace ndn */
+    } /* namespace fw */
+  } /* namespace ndn */
 } /* namespace ns3 */
 
 #endif /* SMART_FLOODING_INF_H_ */

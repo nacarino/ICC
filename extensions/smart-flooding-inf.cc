@@ -32,283 +32,307 @@ NS_LOG_COMPONENT_DEFINE ("SmartFloodingInf");
 TypeId
 SmartFloodingInf::GetTypeId (void)
 {
-	static TypeId tid = TypeId ("ns3::ndn::fw::SmartFloodingInf")
-		   .SetGroupName ("Ndn")
-		   .SetParent <SmartFlooding> ()
-		   .AddConstructor <SmartFloodingInf> ()
-		   ;
-	return tid;
+  static TypeId tid = TypeId ("ns3::ndn::fw::SmartFloodingInf")
+		       .SetGroupName ("Ndn")
+		       .SetParent <SmartFlooding> ()
+		       .AddConstructor <SmartFloodingInf> ()
+		       ;
+  return tid;
 }
 
 SmartFloodingInf::SmartFloodingInf()
- : m_start         (0)
- , m_rtx           (MilliSeconds(100))
- , m_redirect      (false)
- , m_data_redirect (false)
- , m_edge          (false)
+: m_start         (0)
+, m_rtx           (MilliSeconds(100))
+, m_redirect      (false)
+, m_data_redirect (false)
+, m_edge          (false)
 {
 }
 
 SmartFloodingInf::~SmartFloodingInf() {
-	// TODO Auto-generated destructor stub
+  // TODO Auto-generated destructor stub
 }
 
 // Reimplementation to create the Interests and redirect them
 void
 SmartFloodingInf::SatisfyPendingInterest (Ptr<Face> inFace, Ptr<const Data> data, Ptr<pit::Entry> pitEntry)
 {
-	if (inFace != 0)
-		pitEntry->RemoveIncoming (inFace);
+  if (inFace != 0)
+    pitEntry->RemoveIncoming (inFace);
 
-	std::set<Ptr<Face> > seen_face;
+  std::set<Ptr<Face> > seen_face;
 
-	//satisfy all pending incoming Interests
-	BOOST_FOREACH (const pit::IncomingFace &incoming, pitEntry->GetIncoming ())
+  //satisfy all pending incoming Interests
+  BOOST_FOREACH (const pit::IncomingFace &incoming, pitEntry->GetIncoming ())
+  {
+    bool ok = incoming.m_face->SendData (data);
+
+    DidSendOutData (inFace, incoming.m_face, data, pitEntry);
+    NS_LOG_DEBUG ("Satisfy " << *incoming.m_face);
+
+    if (!ok)
+      {
+	m_dropData (data, incoming.m_face);
+	NS_LOG_DEBUG ("Cannot satisfy data to " << *incoming.m_face);
+      }
+
+    // Keep list of Faces seen to later check
+    seen_face.insert(incoming.m_face);
+  }
+  Time now = Simulator::Now ();
+
+  // Check if we have the redirect turned on
+  if (m_redirect) {
+
+      // Iterator
+      std::set<Ptr<Face> >::iterator it;
+
+      // Place to keep the difference of the set we have and what we have seen
+      std::set<Ptr<Face> > diff;
+
+      std::set_difference(redirectFaces.begin(), redirectFaces.end(), seen_face.begin(), seen_face.end(),
+			  std::inserter(diff, diff.begin()));
+
+      for (it = diff.begin(); it != diff.end(); it++)
 	{
-		bool ok = incoming.m_face->SendData (data);
+	  Ptr<Face> touse = (*it);
+	  bool ok = touse->SendData (data);
 
-		DidSendOutData (inFace, incoming.m_face, data, pitEntry);
-		NS_LOG_DEBUG ("Satisfy " << *incoming.m_face);
+	  DidSendOutData (inFace, touse, data, pitEntry);
+	  NS_LOG_DEBUG ("Satisfy " << touse);
 
-		if (!ok)
-		{
-			m_dropData (data, incoming.m_face);
-			NS_LOG_DEBUG ("Cannot satisfy data to " << *incoming.m_face);
-		}
-
-		// Keep list of Faces seen to later check
-		seen_face.insert(incoming.m_face);
+	  if (!ok)
+	    {
+	      m_dropData (data, touse);
+	      NS_LOG_DEBUG ("Cannot satisfy data to " << touse);
+	    }
 	}
-	Time now = Simulator::Now ();
+  }
 
-	// Check if we have the redirect turned on
-	if (m_redirect && m_start <= now /*&& now <= m_stop*/) {
+  // All incoming interests are satisfied. Remove them
+  pitEntry->ClearIncoming ();
 
-		// Iterator
-		std::set<Ptr<Face> >::iterator it;
+  // Remove all outgoing faces
+  pitEntry->ClearOutgoing ();
 
-		// Place to keep the difference of the set we have and what we have seen
-		std::set<Ptr<Face> > diff;
-
-		std::set_difference(redirectFaces.begin(), redirectFaces.end(), seen_face.begin(), seen_face.end(),
-				std::inserter(diff, diff.begin()));
-
-		for (it = diff.begin(); it != diff.end(); it++)
-		{
-			Ptr<Face> touse = (*it);
-			bool ok = touse->SendData (data);
-
-			DidSendOutData (inFace, touse, data, pitEntry);
-			NS_LOG_DEBUG ("Satisfy " << touse);
-
-			if (!ok)
-			{
-				m_dropData (data, touse);
-				NS_LOG_DEBUG ("Cannot satisfy data to " << touse);
-			}
-		}
-	}
-
-	// All incoming interests are satisfied. Remove them
-	pitEntry->ClearIncoming ();
-
-	// Remove all outgoing faces
-	pitEntry->ClearOutgoing ();
-
-	// Set pruning timeout on PIT entry (instead of deleting the record)
-	m_pit->MarkErased (pitEntry);
+  // Set pruning timeout on PIT entry (instead of deleting the record)
+  m_pit->MarkErased (pitEntry);
 }
 
 // Reimplementation on obtaining Data
 void
 SmartFloodingInf::OnData (Ptr<Face> inFace, Ptr<Data> data)
 {
-	NS_LOG_FUNCTION (inFace << data->GetName ());
-	m_inData (data, inFace);
+  NS_LOG_FUNCTION (inFace << data->GetName ());
+  m_inData (data, inFace);
 
-	Time now = Simulator::Now ();
+  Time now = Simulator::Now ();
 
-	// Lookup PIT entry
-	Ptr<pit::Entry> pitEntry = m_pit->Lookup (*data);
-	if (pitEntry == 0)
+  // Iterator
+  std::set<Ptr<Face> >::iterator it;
+
+  // Lookup PIT entry
+  Ptr<pit::Entry> pitEntry = m_pit->Lookup (*data);
+  if (pitEntry == 0)
+    {
+
+      if (m_data_redirect)
 	{
+	  // Add to content store
+	  m_contentStore->Add (data);
 
-		if (m_data_redirect && m_start <= now)
+	  // Save the information in our map and wait for further instructions
+	  if (m_edge)
+	    {
+	      for (it = dataRedirect.begin(); it != dataRedirect.end(); it++)
 		{
-			// Add to content store
-			m_contentStore->Add (data);
+		  superData curr;
+		  curr.inface = inFace;
+		  curr.outface = (*it);
+		  curr.data = data;
+		  buffer[now] = curr;
+		}
+	      return;
+	    }
+	  else
+	    {
+	      for (it = dataRedirect.begin(); it != dataRedirect.end(); it++)
+		{
+		  Ptr<Face> touse = (*it);
+		  // The Data we have received, doesn't have a PIT entry, so we create it
+		  // Create a Nonce
+		  UniformVariable m_rand = UniformVariable(0, std::numeric_limits<uint32_t>::max ());
 
-			// Iterator
-			std::set<Ptr<Face> >::iterator it;
+		  // Obtain the name from the Data packet
+		  Ptr<ndn::Name> incoming_name = Create<ndn::Name> (data->GetName());
 
-			// The Data we have received, doesn't have a PIT entry, so we create it
-			// Create a Nonce
-			UniformVariable m_rand = UniformVariable(0, std::numeric_limits<uint32_t>::max ());
+		  // Create the Interest packet using the information we have
+		  Ptr<Interest> interest = Create<Interest> ();
+		  interest->SetNonce               (m_rand.GetValue ());
+		  interest->SetName                (incoming_name);
+		  interest->SetInterestLifetime    (Years (1));
 
-			// Obtain the name from the Data packet
-			Ptr<ndn::Name> incoming_name = Create<ndn::Name> (data->GetName());
+		  // Create a newly created PIT Entry
+		  pitEntry = m_pit->Create (interest);
+		  if (pitEntry != 0)
+		    {
+		      DidCreatePitEntry (touse, interest, pitEntry);
+		    }
 
-			// Create the Interest packet using the information we have
-			Ptr<Interest> interest = Create<Interest> ();
-			interest->SetNonce               (m_rand.GetValue ());
-			interest->SetName                (incoming_name);
-			interest->SetInterestLifetime    (Years (1));
+		  pitEntry->AddSeenNonce (interest->GetNonce ());
 
-			// Create a newly created PIT Entry
-			pitEntry = m_pit->Create (interest);
-			if (pitEntry != 0)
-			{
-				DidCreatePitEntry (inFace, interest, pitEntry);
-			}
+		  pitEntry->AddIncoming(touse);
 
-			pitEntry->AddSeenNonce (interest->GetNonce ());
+		  pitEntry->UpdateLifetime(interest->GetInterestLifetime ());
 
-			pitEntry->AddIncoming (inFace);
+		  // Do data plane performance measurements
+		  WillSatisfyPendingInterest (inFace, pitEntry);
 
-			pitEntry->UpdateLifetime(interest->GetInterestLifetime ());
-
-			// Add all the interfaces specified by dataRedirect
-//			for (it = dataRedirect.begin(); it != dataRedirect.end(); it++)
-//			{
-//				pitEntry->AddOutgoing((*it));
-//			}
-//
-//			for (it = dataRedirect.begin(); it != dataRedirect.end(); it++)
-//			{
-//				DidSendOutInterest(inFace, (*it), interest, pitEntry);
-//			}
-
-			// Save the information in our map and wait for further instructions
-			if (m_edge)
-			{
-				retainedData curr;
-				curr.inface = inFace;
-				curr.pitEntry = pitEntry;
-				curr.data = data;
-				buffer[now] = curr;
-				return;
-			}
-			else
-			{
-				// Do data plane performance measurements
-				WillSatisfyPendingInterest (inFace, pitEntry);
-
-				// Actually satisfy pending interest
-				SatisfyPendingInterest (inFace, data, pitEntry);
-
-				return;
-			}
+		  // Actually satisfy pending interest
+		  SatisfyPendingInterest (inFace, data, pitEntry);
 		}
 
-		bool cached = false;
-
-		if (m_cacheUnsolicitedData || (m_cacheUnsolicitedDataFromApps && (inFace->GetFlags () & Face::APPLICATION)))
-		{
-			// Optimistically add or update entry in the content store
-			cached = m_contentStore->Add (data);
-		}
-		else
-		{
-			// Drop data packet if PIT entry is not found
-			// (unsolicited data packets should not "poison" content store)
-
-			//drop dulicated or not requested data packet
-			m_dropData (data, inFace);
-		}
-
-		DidReceiveUnsolicitedData (inFace, data, cached);
-		return;
+	      return;
+	    }
 	}
-	else
+      else
 	{
-		bool cached = m_contentStore->Add (data);
-		DidReceiveSolicitedData (inFace, data, cached);
+	  DidReceiveUnsolicitedData (inFace, data, false);
+	  return;
 	}
+    }
+  else
+    {
+      bool cached = m_contentStore->Add(data);
+      DidReceiveSolicitedData (inFace, data, cached);
+    }
 
-	while (pitEntry != 0)
-	{
-		// Do data plane performance measurements
-		WillSatisfyPendingInterest (inFace, pitEntry);
+  superData curr;
+  curr.data = data;
+  curr.outface = 0;
+  curr.inface = inFace;
+  buffer[now] = curr;
 
-		// Actually satisfy pending interest
-		SatisfyPendingInterest (inFace, data, pitEntry);
+  while (pitEntry != 0)
+    {
+      // Do data plane performance measurements
+      WillSatisfyPendingInterest (inFace, pitEntry);
 
-		// Lookup another PIT entry
-		pitEntry = m_pit->Lookup (*data);
-	}
+      // Actually satisfy pending interest
+      SatisfyPendingInterest (inFace, data, pitEntry);
+
+      // Lookup another PIT entry
+      pitEntry = m_pit->Lookup (*data);
+    }
 }
 
 void
 SmartFloodingInf::WillEraseTimedOutPendingInterest (Ptr<pit::Entry> pitEntry)
 {
-	NS_LOG_DEBUG ("WillEraseTimedOutPendingInterest for " << pitEntry->GetPrefix ());
+  NS_LOG_DEBUG ("WillEraseTimedOutPendingInterest for " << pitEntry->GetPrefix ());
 
-	if (pitEntry != 0) {
-		for (pit::Entry::out_container::iterator face = pitEntry->GetOutgoing ().begin ();
-				face != pitEntry->GetOutgoing ().end ();
-				face ++)
-		{
-			// NS_LOG_DEBUG ("Face: " << face->m_face);
-			pitEntry->GetFibEntry ()->UpdateStatus (face->m_face, fib::FaceMetric::NDN_FIB_YELLOW);
-		}
-
-		super::WillEraseTimedOutPendingInterest (pitEntry);
+  if (pitEntry != 0) {
+      for (pit::Entry::out_container::iterator face = pitEntry->GetOutgoing ().begin ();
+	  face != pitEntry->GetOutgoing ().end ();
+	  face ++)
+	{
+	  // NS_LOG_DEBUG ("Face: " << face->m_face);
+	  pitEntry->GetFibEntry ()->UpdateStatus (face->m_face, fib::FaceMetric::NDN_FIB_YELLOW);
 	}
+
+      super::WillEraseTimedOutPendingInterest (pitEntry);
+  }
 }
 
 void
 SmartFloodingInf::WillSatisfyPendingInterest (Ptr<Face> inFace, Ptr<pit::Entry> pitEntry)
 {
-	if (inFace != 0)
+  if (inFace != 0)
+    {
+      // Update metric status for the incoming interface in the corresponding FIB entry
+      pitEntry->GetFibEntry ()->UpdateStatus (inFace, fib::FaceMetric::NDN_FIB_GREEN);
+    }
+
+  if (pitEntry != 0)
+    {
+      pit::Entry::out_iterator out = pitEntry->GetOutgoing ().find (inFace);
+
+      // If we have sent interest for this data via this face, then update stats.
+      if (out != pitEntry->GetOutgoing ().end ())
 	{
-		// Update metric status for the incoming interface in the corresponding FIB entry
-		pitEntry->GetFibEntry ()->UpdateStatus (inFace, fib::FaceMetric::NDN_FIB_GREEN);
+	  pitEntry->GetFibEntry ()->UpdateFaceRtt (inFace, Simulator::Now () - out->m_sendTime);
 	}
+    }
 
-	if (pitEntry != 0)
-	{
-		pit::Entry::out_iterator out = pitEntry->GetOutgoing ().find (inFace);
-
-		// If we have sent interest for this data via this face, then update stats.
-		if (out != pitEntry->GetOutgoing ().end ())
-		{
-			pitEntry->GetFibEntry ()->UpdateFaceRtt (inFace, Simulator::Now () - out->m_sendTime);
-		}
-	}
-
-	m_satisfiedInterests (pitEntry);
+  m_satisfiedInterests (pitEntry);
 }
 
 void
 SmartFloodingInf::flushBuffer () {
 
-	// Get our current time
-	Time now = Simulator::Now ();
+  // Get our current time
+  Time now = Simulator::Now ();
 
-	std::map<Time, retainedData>::iterator ii;
+  std::map<Time, superData>::iterator ij;
 
-	std::cout << "Buffer of " << buffer.size () << " at " << now << std::endl;
+  int total = 0;
 
-	int total = 0;
+  std::cout << "Historical buffer of " << buffer.size () << " at " << now << std::endl;
+  std::cout << "Flushing from " << m_start -m_rtx << std::endl;
 
-	// Go through the buffer we have
-	for (ii = buffer.begin(); ii != buffer.end(); ++ii)
+  for (ij = buffer.lower_bound(m_start -m_rtx) ; ij != buffer.end(); ++ij)
+    {
+      // The Data we have received, doesn't have a PIT entry, so we create it
+      // Create a Nonce
+      UniformVariable m_rand = UniformVariable(0, std::numeric_limits<uint32_t>::max ());
+
+      // Obtain the name from the Data packet
+      Ptr<ndn::Name> incoming_name = Create<ndn::Name> ((*ij).second.data->GetName());
+
+      // Create the Interest packet using the information we have
+      Ptr<Interest> interest = Create<Interest> ();
+      interest->SetNonce               (m_rand.GetValue ());
+      interest->SetName                (incoming_name);
+      interest->SetInterestLifetime    (Years (1));
+
+      // Create a newly created PIT Entry
+      Ptr<pit::Entry> pitEntry = m_pit->Create (interest);
+      if (pitEntry != 0)
 	{
-		// If the time we saw the packet is lower than the Rtx time, send
-		//if (now - (*ii).first < m_rtx) {
-			// Do data plane performance measurements
-			WillSatisfyPendingInterest ((*ii).second.inface, (*ii).second.pitEntry);
-
-			SatisfyPendingInterest((*ii).second.inface, (*ii).second.data, (*ii).second.pitEntry);
-
-			total++;
-		//}
+	  DidCreatePitEntry ((*ij).second.inface, interest, pitEntry);
 	}
 
-	std::cout << "Transmitted " << total << std::endl;
+      pitEntry->AddSeenNonce (interest->GetNonce ());
 
-	// With everything launched, we clear the buffer
-	buffer.clear ();
+      Ptr<Face> touse = (*ij).second.outface;
+      if (touse == 0)
+	{
+	  // Iterator
+	  std::set<Ptr<Face> >::iterator it;
+	  for (it = dataRedirect.begin(); it != dataRedirect.end(); it++)
+	    {
+	      pitEntry->AddIncoming ((*it));
+	    }
+	}
+      else
+	{
+	  pitEntry->AddIncoming (touse);
+	}
+
+      pitEntry->UpdateLifetime(interest->GetInterestLifetime ());
+
+      WillSatisfyPendingInterest ((*ij).second.inface, pitEntry);
+      SatisfyPendingInterest((*ij).second.inface, (*ij).second.data, pitEntry);
+
+      total++;
+    }
+
+  std::cout << "Transmitted " << total << std::endl;
+}
+
+uint32_t
+SmartFloodingInf::bufferSize () {
+  return buffer.size ();
 }
 
 } /* namespace fw */
